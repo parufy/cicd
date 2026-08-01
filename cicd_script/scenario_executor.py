@@ -124,12 +124,22 @@ class ScenarioParser:
             raise FileNotFoundError(f"シナリオファイルが見つかりません: {yaml_path}")
 
         with open(path, encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
+            raw = yaml.safe_load(f) or {}
 
         logger.info(f"シナリオファイル読み込み: {yaml_path}")
 
-        hosts     = self._parse_hosts(raw.get("hosts", []))
-        scenarios = self._parse_scenarios(raw.get("scenarios", []), hosts)
+        config     = raw.get("config", {}) or {}
+        hosts_raw  = self._load_config_section(raw, config, "hosts", path.parent, [])
+        defaults   = self._load_config_section(raw, config, "defaults", path.parent, {})
+        operations = self._load_config_section(raw, config, "operations", path.parent, {})
+
+        hosts     = self._parse_hosts(hosts_raw)
+        scenarios = self._parse_scenarios(
+            raw.get("scenarios", []),
+            hosts,
+            defaults,
+            operations,
+        )
 
         logger.info(f"  定義ホスト数: {len(hosts)}, ステップ数: {len(scenarios)}")
         return PipelineConfig(
@@ -138,6 +148,34 @@ class ScenarioParser:
             iperf_server=raw.get("iperf_server", {}),
             log_targets=raw.get("log_targets", []),
         )
+
+    def _load_config_section(
+        self,
+        raw: dict,
+        config: dict,
+        section: str,
+        base_dir: Path,
+        default,
+    ):
+        if section in raw:
+            return raw[section] or default
+
+        config_value = config.get(section)
+        if not config_value:
+            return default
+
+        config_path = Path(config_value)
+        if not config_path.is_absolute():
+            config_path = base_dir / config_path
+        if not config_path.exists():
+            raise FileNotFoundError(f"{section} 設定ファイルが見つかりません: {config_path}")
+
+        with open(config_path, encoding="utf-8") as f:
+            loaded = yaml.safe_load(f) or {}
+
+        if section in loaded:
+            return loaded[section] or default
+        return loaded or default
 
     def _parse_hosts(self, raw_hosts: list) -> dict[str, HostConfig]:
         hosts = {}
@@ -158,25 +196,30 @@ class ScenarioParser:
         self,
         raw_scenarios: list,
         hosts: dict[str, HostConfig],
+        defaults: dict | None = None,
+        operations: dict | None = None,
     ) -> list[ScenarioStep]:
+        defaults = defaults or {}
+        operations = operations or {}
         steps = []
         for i, s in enumerate(raw_scenarios):
-            action = s.get("action", "").lower()
+            step = self._resolve_step(i, s, defaults, operations)
+            action = step.get("action", "").lower()
             if action not in self.VALID_ACTIONS:
                 raise ValueError(
-                    f"ステップ{i+1} '{s.get('name')}': "
+                    f"ステップ{i+1} '{step.get('name')}': "
                     f"不正なaction '{action}' (有効値: {self.VALID_ACTIONS})"
                 )
 
-            execution = s.get("execution", "sequential").lower()
+            execution = step.get("execution", "sequential").lower()
             if execution not in self.VALID_EXECUTIONS:
                 raise ValueError(
-                    f"ステップ{i+1} '{s.get('name')}': "
+                    f"ステップ{i+1} '{step.get('name')}': "
                     f"不正なexecution '{execution}' "
                     f"(有効値: {self.VALID_EXECUTIONS})"
                 )
 
-            params = s.get("params", {})
+            params = step.get("params", {})
 
             # ── params.host を解決してターゲットホストリストを構築 ──
             raw_host = params.get("host")
@@ -194,13 +237,13 @@ class ScenarioParser:
             for h in target_hosts:
                 if h != LOCAL_HOST and h not in hosts:
                     raise ValueError(
-                        f"ステップ{i+1} '{s.get('name')}': "
+                        f"ステップ{i+1} '{step.get('name')}': "
                         f"hosts に未定義のホスト名 '{h}' が指定されました"
                     )
 
             steps.append(
                 ScenarioStep(
-                    name=s.get("name", f"step_{i+1}"),
+                    name=step.get("name", f"step_{i+1}"),
                     action=action,
                     params=params,
                     execution=execution,
@@ -208,6 +251,43 @@ class ScenarioParser:
                 )
             )
         return steps
+
+    def _resolve_step(
+        self,
+        index: int,
+        raw_step: dict,
+        defaults: dict,
+        operations: dict,
+    ) -> dict:
+        use_name = raw_step.get("use")
+        operation = {}
+        if use_name:
+            if use_name not in operations:
+                raise ValueError(
+                    f"ステップ{index+1} '{raw_step.get('name')}': "
+                    f"未定義のoperation '{use_name}' が指定されました"
+                )
+            operation = operations[use_name] or {}
+
+        action = raw_step.get("action", operation.get("action", ""))
+        action = str(action).lower()
+        common_defaults = defaults.get("common", {}) or {}
+        action_defaults = defaults.get(action, {}) or {}
+
+        params = {}
+        params.update(action_defaults)
+        params.update(operation.get("params", {}) or {})
+        params.update(raw_step.get("params", {}) or {})
+
+        return {
+            "name": raw_step.get("name", operation.get("name", f"step_{index+1}")),
+            "action": action,
+            "execution": raw_step.get(
+                "execution",
+                operation.get("execution", common_defaults.get("execution", "sequential")),
+            ),
+            "params": params,
+        }
 
 
 # ─── アクション実行クラス ─────────────────────────────────────────

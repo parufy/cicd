@@ -1,0 +1,48 @@
+config:
+  hosts: ../config/hosts.yaml
+  defaults: ../config/action_defaults.yaml
+  operations: ../config/operations.yaml
+
+iperf_server:
+  address: 127.0.0.1
+  port: 5201
+
+scenarios:
+  - name: 初期待機
+    use: wait.3s
+
+  - name: 機内モード OFF
+    use: adb.airplane_off
+    params:
+      output_file: adb_mode_off_result_before.txt
+
+  - name: 機内モード状態確認
+    use: adb.status
+    params:
+      output_file: adb_status_result_before.txt
+
+  - name: localhost ping 短時間
+    use: ping.localhost_short
+    params:
+      output_file: ping_adb_short_result.txt
+
+  - name: UDP iperf 10秒
+    use: iperf.adb_udp_ul_10s
+    params:
+      output_file: iperf_adb_10s_result.txt
+
+  - name: UDP iperf 30秒 5Mbps
+    use: iperf.adb_udp_ul_30s
+    params:
+      bandwidth: 5M
+      output_file: iperf_adb_30s_5m_result.txt
+
+  - name: 機内モード ON
+    use: adb.airplane_on
+    params:
+      output_file: adb_mode_on_result_after.txt
+
+  - name: 機内モード状態確認
+    use: adb.status
+    params:
+      output_file: adb_status_result_after.txt

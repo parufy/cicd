@@ -1,0 +1,6 @@
+hosts:
+  - name: host1
+    address: 172.21.237.231
+    user: gt-line
+    password: "${HOST1_PASSWORD}"
+    port: 22

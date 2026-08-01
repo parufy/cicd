@@ -1,0 +1,48 @@
+operations:
+  wait.3s:
+    action: wait
+    params:
+      duration: 3
+
+  wait.10s:
+    action: wait
+    params:
+      duration: 10
+
+  adb.status:
+    action: adb_control
+    params:
+      mode: status
+      wait_after: 0
+
+  adb.airplane_off:
+    action: adb_control
+    params:
+      mode: off
+      wait_after: 3
+
+  adb.airplane_on:
+    action: adb_control
+    params:
+      mode: on
+      wait_after: 5
+
+  ping.localhost_short:
+    action: ping
+    params:
+      count: 3
+
+  ping.localhost_normal:
+    action: ping
+
+  iperf.adb_udp_ul_10s:
+    action: iperf
+    params:
+      duration: 10
+      bandwidth: 1M
+
+  iperf.adb_udp_ul_30s:
+    action: iperf
+    params:
+      duration: 30
+      bandwidth: 1M
