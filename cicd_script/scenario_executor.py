@@ -28,6 +28,7 @@ import re
 import subprocess
 import sys
 import time
+from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -135,7 +136,7 @@ class ScenarioParser:
 
         hosts     = self._parse_hosts(hosts_raw)
         scenarios = self._parse_scenarios(
-            raw.get("scenarios", []),
+            self._expand_repeats(raw.get("scenarios", [])),
             hosts,
             defaults,
             operations,
@@ -176,6 +177,64 @@ class ScenarioParser:
         if section in loaded:
             return loaded[section] or default
         return loaded or default
+
+    def _expand_repeats(self, raw_scenarios: list) -> list[dict]:
+        expanded = []
+        for i, item in enumerate(raw_scenarios):
+            if "repeat" not in item:
+                expanded.append(item)
+                continue
+
+            count = int(item.get("repeat", 0))
+            if count < 1:
+                raise ValueError(f"repeat ブロック{i+1}: repeat は 1 以上を指定してください")
+
+            child_steps = item.get("steps")
+            if not isinstance(child_steps, list) or not child_steps:
+                raise ValueError(f"repeat ブロック{i+1}: steps に1件以上のステップを指定してください")
+
+            child_steps = self._expand_repeats(child_steps)
+            for repeat_index in range(1, count + 1):
+                for child_index, child in enumerate(child_steps, 1):
+                    step = deepcopy(child)
+                    self._apply_repeat_context(step, repeat_index, count, child_index)
+                    expanded.append(step)
+        return expanded
+
+    def _apply_repeat_context(
+        self,
+        value,
+        repeat_index: int,
+        repeat_count: int,
+        child_index: int,
+    ):
+        if isinstance(value, dict):
+            for key, child_value in value.items():
+                value[key] = self._apply_repeat_context(
+                    child_value,
+                    repeat_index,
+                    repeat_count,
+                    child_index,
+                )
+            if "name" in value:
+                value["name"] = f"{value['name']} ({repeat_index}/{repeat_count})"
+            return value
+        if isinstance(value, list):
+            return [
+                self._apply_repeat_context(v, repeat_index, repeat_count, child_index)
+                for v in value
+            ]
+        if isinstance(value, str):
+            replacements = {
+                "{repeat}": str(repeat_index),
+                "{repeat_index}": str(repeat_index),
+                "{repeat_count}": str(repeat_count),
+                "{step}": str(child_index),
+            }
+            for placeholder, replacement in replacements.items():
+                value = value.replace(placeholder, replacement)
+            return value
+        return value
 
     def _parse_hosts(self, raw_hosts: list) -> dict[str, HostConfig]:
         hosts = {}

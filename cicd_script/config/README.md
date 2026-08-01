@@ -35,3 +35,32 @@ scenarios:
 ```
 
 既存の `action` / `execution` / `params` を直接書く形式も引き続き利用できます。
+
+## repeat の使い方
+
+同じ手順を繰り返す場合は `repeat` と `steps` を指定します。
+繰り返し内の step 名には自動で `(1/3)` のような回数が付きます。
+
+```yaml
+scenarios:
+  - repeat: 3
+    steps:
+      - name: 機内モード OFF
+        use: adb.airplane_off
+        params:
+          output_file: adb_mode_off_result_{repeat}.txt
+
+      - name: 状態確認
+        use: adb.status
+        params:
+          output_file: adb_status_result_{repeat}.txt
+
+      - name: wait
+        use: wait.3s
+```
+
+文字列には以下のプレースホルダを使用できます。
+
+- `{repeat}` または `{repeat_index}`: 現在の繰り返し番号。1 始まり。
+- `{repeat_count}`: 繰り返し総数。
+- `{step}`: repeat ブロック内の step 番号。1 始まり。

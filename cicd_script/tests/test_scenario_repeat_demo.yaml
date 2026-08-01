@@ -1,0 +1,33 @@
+config:
+  hosts: ../config/hosts.yaml
+  defaults: ../config/action_defaults.yaml
+  operations: ../config/operations.yaml
+
+scenarios:
+  - name: 初期待機
+    use: wait.3s
+
+  - repeat: 3
+    steps:
+      - name: 機内モード OFF
+        use: adb.airplane_off
+        params:
+          output_file: adb_mode_off_result_{repeat}.txt
+
+      - name: 機内モード状態確認
+        use: adb.status
+        params:
+          output_file: adb_status_result_{repeat}.txt
+
+      - name: wait
+        use: wait.3s
+
+      - name: 機内モード ON
+        use: adb.airplane_on
+        params:
+          output_file: adb_mode_on_result_{repeat}.txt
+
+      - name: 機内モード状態確認
+        use: adb.status
+        params:
+          output_file: adb_status_after_result_{repeat}.txt
