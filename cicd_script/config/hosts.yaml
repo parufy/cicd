@@ -4,3 +4,12 @@ hosts:
     user: gt-line
     password: "${HOST1_PASSWORD}"
     port: 22
+
+  # VATT / ATT control PC.
+  # Uncomment and set the actual connection information before using
+  # vatt_control defaults or vatt.* operations.
+  # - name: att_pc
+  #   address: 172.21.xxx.xxx
+  #   user: att-user
+  #   password: "${ATT_PC_PASSWORD}"
+  #   port: 22

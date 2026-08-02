@@ -46,3 +46,32 @@ operations:
     params:
       duration: 30
       bandwidth: 1M
+
+  vatt.status:
+    action: vatt_control
+    params:
+      mode: status
+
+  vatt.set_all_20db:
+    action: vatt_control
+    params:
+      mode: set_all
+      attenuation_db: 20.0
+      channels: [1, 2, 3, 4]
+
+  vatt.ch1_5db:
+    action: vatt_control
+    params:
+      mode: set
+      channel: 1
+      attenuation_db: 5.0
+
+  vatt.ch1_ramp_0_20db:
+    action: vatt_control
+    params:
+      mode: ramp
+      channel: 1
+      start_db: 0.0
+      stop_db: 20.0
+      step_db: 1.0
+      dwell_ms: 50

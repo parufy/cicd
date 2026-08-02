@@ -45,9 +45,11 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import json
 import os
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, Iterable, Optional
 
 
@@ -501,75 +503,114 @@ class VaunixLDA802Q:
 # コマンドライン引数
 # ==========================================================================
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Vaunix LDA-802Q (4ch) アッテネータ制御プログラム"
-    )
-    parser.add_argument(
-        "--serial",
-        type=int,
-        default=None,
-        help="接続するLDA-802Qのシリアル番号 (int)。省略時は最初に見つかったデバイスに接続する。"
-             "複数台接続時は必ず指定すること。",
-    )
-    parser.add_argument(
-        "--dll-dir",
-        type=str,
-        default=r"C:\Vaunix",
-        help=r"VNX_atten64.dll / VNX_atten.dll が置いてあるフォルダ (既定: C:\Vaunix)",
-    )
-    parser.add_argument(
-        "--test-mode",
-        action="store_true",
-        help="指定するとDLLのテストモードで動作する (実機と通信しない)",
-    )
+    parser = argparse.ArgumentParser(description="Vaunix LDA-802Q control")
+    parser.add_argument("--mode", required=True,
+                        choices=["status", "set", "set_all", "ramp", "stop_ramp"])
+    parser.add_argument("--serial", type=int, default=None)
+    parser.add_argument("--dll-dir", type=str, default=r"C:\Vaunix")
+    parser.add_argument("--test-mode", action="store_true")
+    parser.add_argument("--channel", type=int, default=None)
+    parser.add_argument("--channels", type=int, nargs="*", default=None)
+    parser.add_argument("--attenuation-db", type=float, default=None)
+    parser.add_argument("--start-db", type=float, default=None)
+    parser.add_argument("--stop-db", type=float, default=None)
+    parser.add_argument("--step-db", type=float, default=0.5)
+    parser.add_argument("--dwell-ms", type=int, default=50)
+    parser.add_argument("--step-db2", type=float, default=None)
+    parser.add_argument("--dwell-ms2", type=int, default=None)
+    parser.add_argument("--idle-ms", type=int, default=0)
+    parser.add_argument("--hold-ms", type=int, default=0)
+    parser.add_argument("--bidirectional", action="store_true")
+    parser.add_argument("--repeat", action="store_true")
+    parser.add_argument("--no-go", action="store_true")
+    parser.add_argument("--output", default=None)
     return parser.parse_args()
 
 
-# ==========================================================================
-# 使用例
-# ==========================================================================
-if __name__ == "__main__":
-    # 実行例:
-    #   python vaunix_lda802q_control.py --serial 23160
-    #   python vaunix_lda802q_control.py --serial 23160 --dll-dir "C:\Vaunix"
-    #   python vaunix_lda802q_control.py --test-mode   (実機なしで動作確認する場合)
-    args = parse_args()
+def _require(value, name: str):
+    if value is None:
+        raise ValueError(f"{name} is required")
+    return value
+
+
+def run_cli(args: argparse.Namespace) -> dict:
+    report = {
+        "timestamp": datetime.now().isoformat(),
+        "mode": args.mode,
+        "serial": args.serial,
+        "success": False,
+        "message": "",
+        "values": None,
+    }
 
     with VaunixLDA802Q(
         serial_number=args.serial,
         dll_dir=args.dll_dir,
         test_mode=args.test_mode,
     ) as lda:
+        if args.mode == "status":
+            report["values"] = lda.get_all_channel_attenuations(args.channels)
+            report["message"] = "status acquired"
+        elif args.mode == "set":
+            lda.set_channel(
+                _require(args.channel, "--channel"),
+                _require(args.attenuation_db, "--attenuation-db"),
+            )
+            report["message"] = "channel attenuation set"
+            report["values"] = lda.get_all_channel_attenuations([args.channel])
+        elif args.mode == "set_all":
+            lda.set_all_channels(
+                _require(args.attenuation_db, "--attenuation-db"),
+                args.channels,
+            )
+            report["message"] = "attenuation set"
+            report["values"] = lda.get_all_channel_attenuations(args.channels)
+        elif args.mode == "ramp":
+            params = RampParams(
+                start_db=_require(args.start_db, "--start-db"),
+                stop_db=_require(args.stop_db, "--stop-db"),
+                step_db=args.step_db,
+                dwell_ms=args.dwell_ms,
+                step_db2=args.step_db2,
+                dwell_ms2=args.dwell_ms2,
+                idle_ms=args.idle_ms,
+                hold_ms=args.hold_ms,
+                bidirectional=args.bidirectional,
+                repeat=args.repeat,
+            )
+            lda.ramp_channel(_require(args.channel, "--channel"), params, go=not args.no_go)
+            report["message"] = "ramp configured"
+        elif args.mode == "stop_ramp":
+            lda.stop_ramp(_require(args.channel, "--channel"))
+            report["message"] = "ramp stopped"
 
-        # 1. 複数ch(既定は全4ch)に同じアッテネーション値を同時に設定
-        lda.set_all_channels(20.0)
-        # 一部chのみ同時設定したい場合:
-        # lda.set_all_channels(10.0, channels=[1, 3])
+    report["success"] = True
+    return report
 
-        # 2. 指定した1chのみアッテネーション値を設定 (chは引数で指定)
-        lda.set_channel(1, 5.0)
-        lda.set_channel(2, 10.0)
-        lda.set_channel(3, 15.0)
-        lda.set_channel(4, 20.0)
-        print("現在値:", lda.get_all_channel_attenuations())
 
-        # 3. 指定した1chのみランプ(掃引)を実行 (chは引数で指定)
-        lda.ramp_channel(
-            1,
-            RampParams(start_db=0.0, stop_db=20.0, step_db=1.0, dwell_ms=50),
-        )
-        lda.ramp_channel(
-            2,
-            RampParams(start_db=20.0, stop_db=0.0, step_db=1.0, dwell_ms=50),
-        )
-        lda.ramp_channel(
-            3,
-            RampParams(start_db=10.0, stop_db=30.0, step_db=2.0, dwell_ms=100, repeat=True),
-        )
-        lda.ramp_channel(
-            4,
-            RampParams(start_db=0.0, stop_db=15.0, step_db=0.5, dwell_ms=30, bidirectional=True),
-        )
+def main() -> None:
+    args = parse_args()
+    try:
+        report = run_cli(args)
+        rc = 0
+    except Exception as exc:
+        report = {
+            "timestamp": datetime.now().isoformat(),
+            "mode": args.mode,
+            "serial": args.serial,
+            "success": False,
+            "message": str(exc),
+            "values": None,
+        }
+        rc = 1
 
-        # ランプを止めたい場合:
-        # lda.stop_ramp(3)
+    text = json.dumps(report, ensure_ascii=False, indent=2)
+    print(text)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(text)
+    sys.exit(rc)
+
+
+if __name__ == "__main__":
+    main()

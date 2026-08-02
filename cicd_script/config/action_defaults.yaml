@@ -35,3 +35,15 @@ defaults:
     server_adb_serial: ""
     server_adb_iperf_path: /data/local/tmp/iperf3
     server_startup_wait: 2
+
+  vatt_control:
+    host: att_pc
+    mode: status
+    deploy: true
+    remote_dir: "C:\\cicd\\vatt_cnt"
+    python_path: python
+    dll_dir: "C:\\cicd\\vatt_cnt"
+    serial:
+    test_mode: false
+    timeout: 600
+    output_file: vatt_result.json

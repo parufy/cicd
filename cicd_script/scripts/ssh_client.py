@@ -114,6 +114,67 @@ class SSHClient:
             sftp.get(remote_path, str(local_path))
         logger.debug(f"  SFTP取得: {remote_path} → {local_path}")
 
+    def put_file(self, local_path: Path, remote_path: str) -> None:
+        """Upload one local file to the remote host with SFTP."""
+        if self._client is None:
+            raise RuntimeError("SSH未接続です。connect()を先に呼んでください")
+
+        with self._client.open_sftp() as sftp:
+            self._sftp_mkdirs(sftp, self._remote_parent(remote_path))
+            sftp.put(str(local_path), remote_path)
+        logger.debug(f"  SFTP put: {local_path} -> {remote_path}")
+
+    def put_directory(self, local_dir: Path, remote_dir: str) -> None:
+        """Upload a local directory tree to the remote host with SFTP."""
+        if self._client is None:
+            raise RuntimeError("SSH未接続です。connect()を先に呼んでください")
+
+        local_dir = local_dir.resolve()
+        with self._client.open_sftp() as sftp:
+            self._sftp_mkdirs(sftp, remote_dir)
+            for path in local_dir.rglob("*"):
+                rel = path.relative_to(local_dir).as_posix()
+                remote_path = self._remote_join(remote_dir, rel)
+                if path.is_dir():
+                    self._sftp_mkdirs(sftp, remote_path)
+                else:
+                    self._sftp_mkdirs(sftp, self._remote_parent(remote_path))
+                    sftp.put(str(path), remote_path)
+                    logger.debug(f"  SFTP put: {path} -> {remote_path}")
+
+    @staticmethod
+    def _remote_join(base: str, child: str) -> str:
+        return base.rstrip("/\\") + "/" + child.replace("\\", "/")
+
+    @staticmethod
+    def _remote_parent(path: str) -> str:
+        normalized = path.replace("\\", "/")
+        parent = normalized.rsplit("/", 1)[0]
+        return parent if parent else "."
+
+    @staticmethod
+    def _sftp_mkdirs(sftp, remote_dir: str) -> None:
+        remote_dir = remote_dir.replace("\\", "/").rstrip("/")
+        if not remote_dir or remote_dir == ".":
+            return
+
+        parts = remote_dir.split("/")
+        current = parts[0]
+        start_index = 1
+        if current == "":
+            current = "/"
+        elif current.endswith(":"):
+            current += "/"
+
+        for part in parts[start_index:]:
+            if not part:
+                continue
+            current = current.rstrip("/") + "/" + part
+            try:
+                sftp.stat(current)
+            except IOError:
+                sftp.mkdir(current)
+
 
 def make_client(host: str, user: str, password: str, port: int = 22) -> SSHClient:
     """SSHClientインスタンスを生成するファクトリ関数"""

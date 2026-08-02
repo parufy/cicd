@@ -116,7 +116,7 @@ class StepResult:
 class ScenarioParser:
     """YAMLシナリオファイルを解析してPipelineConfigに変換する"""
 
-    VALID_ACTIONS    = {"wait", "ping", "iperf", "logcollect", "adb_control"}
+    VALID_ACTIONS    = {"wait", "ping", "iperf", "logcollect", "adb_control", "vatt_control"}
     VALID_EXECUTIONS = {"sequential", "parallel"}
 
     def parse(self, yaml_path: str) -> PipelineConfig:
@@ -389,6 +389,7 @@ class ActionExecutor:
             "iperf":       self._action_iperf,
             "logcollect":  self._action_logcollect,
             "adb_control": self._action_adb_control,
+            "vatt_control": self._action_vatt_control,
         }
 
         handler = handlers.get(step.action)
@@ -538,6 +539,66 @@ class ActionExecutor:
         ]
         if p.get("serial"):
             cmd += ["--serial", str(p["serial"])]
+        return self._run_script(step, cmd, result_file=output_file)
+
+    # ── vatt_control ───────────────────────────────────────────
+    def _action_vatt_control(self, step: ScenarioStep) -> StepResult:
+        p = step.params
+        mode = str(p.get("mode", "status")).lower()
+        if mode not in ("status", "set", "set_all", "ramp", "stop_ramp"):
+            return StepResult(
+                host=self._label, step_name=step.name, action="vatt_control",
+                success=False,
+                error=(
+                    f"Invalid mode '{mode}' "
+                    "(valid: status / set / set_all / ramp / stop_ramp)"
+                ),
+            )
+
+        output_file = self.output_dir / p.get("output_file", f"vatt_{mode}_result.json")
+        local_vatt_dir = Path(__file__).parent / "vatt_cnt"
+        remote_dir = p.get("remote_dir", r"C:\cicd\vatt_cnt")
+        cmd = [
+            sys.executable,
+            str(self.SCRIPTS_DIR / "vatt_control.py"),
+            "--mode", mode,
+            "--local-vatt-dir", str(p.get("local_vatt_dir", local_vatt_dir)),
+            "--remote-dir", str(remote_dir),
+            "--python-path", str(p.get("python_path", "python")),
+            "--dll-dir", str(p.get("dll_dir", remote_dir)),
+            "--output", str(output_file),
+            "--timeout", str(p.get("timeout", 600)),
+            *self._ssh_args(),
+        ]
+        if p.get("deploy", True):
+            cmd.append("--deploy")
+        if p.get("test_mode", False):
+            cmd.append("--test-mode")
+        if p.get("no_go", False):
+            cmd.append("--no-go")
+        if p.get("bidirectional", False):
+            cmd.append("--bidirectional")
+        if p.get("repeat", False):
+            cmd.append("--repeat")
+
+        optional_args = [
+            ("serial", "--serial"),
+            ("channel", "--channel"),
+            ("attenuation_db", "--attenuation-db"),
+            ("start_db", "--start-db"),
+            ("stop_db", "--stop-db"),
+            ("step_db", "--step-db"),
+            ("dwell_ms", "--dwell-ms"),
+            ("step_db2", "--step-db2"),
+            ("dwell_ms2", "--dwell-ms2"),
+            ("idle_ms", "--idle-ms"),
+            ("hold_ms", "--hold-ms"),
+        ]
+        for key, flag in optional_args:
+            if p.get(key) is not None:
+                cmd += [flag, str(p[key])]
+        if p.get("channels"):
+            cmd += ["--channels"] + [str(ch) for ch in p["channels"]]
         return self._run_script(step, cmd, result_file=output_file)
 
     # ── 共通スクリプト実行ヘルパー ──────────────────────────────
