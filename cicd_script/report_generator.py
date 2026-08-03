@@ -200,6 +200,56 @@ def _iperf_detail(result_file: Path) -> str:
 
 
 # ─── 結果テーブル ─────────────────────────────────────────────
+def _vatt_detail(result_file: Path) -> str:
+    try:
+        d = json.loads(result_file.read_text(encoding="utf-8"))
+        vatt = d.get("vatt_result") or {}
+        values = vatt.get("values") or {}
+        mode = _h(d.get("mode", ""))
+        exec_mode = _h(d.get("exec_mode", ""))
+        exec_on = _h(d.get("exec_on", ""))
+        deployed = _h(d.get("deployed", ""))
+        rc = _h(d.get("returncode", ""))
+        msg = _h(vatt.get("message") or "")
+        ok = d.get("success", False)
+        row_cls = "pass" if ok else "fail"
+
+        if values:
+            value_rows = "".join(
+                f"<tr><td>ch{_h(ch)}</td><td class=\"num\">{float(value):.2f} dB</td></tr>"
+                for ch, value in sorted(values.items(), key=lambda item: int(item[0]))
+            )
+        else:
+            value_rows = '<tr><td colspan="2">N/A</td></tr>'
+
+        stderr = d.get("stderr") or []
+        err_html = ""
+        if not ok and stderr:
+            err_html = f'<div class="error-msg">{_h(" / ".join(str(line) for line in stderr[-3:]))}</div>'
+
+        return f"""
+        <div class="detail">
+          <table class="inner">
+            <tr><th>Mode</th><th>Exec</th><th>Deployed</th><th>Return code</th><th>Message</th></tr>
+            <tr class="{row_cls}">
+              <td>{mode}</td>
+              <td>{exec_mode} {_h(exec_on)}</td>
+              <td>{deployed}</td>
+              <td class="num">{rc}</td>
+              <td>{msg}</td>
+            </tr>
+          </table>
+          <div class="iv-title">ATT values</div>
+          <table class="inner">
+            <tr><th>Channel</th><th>Attenuation</th></tr>
+            {value_rows}
+          </table>
+          {err_html}
+        </div>"""
+    except Exception:
+        return ""
+
+
 def _build_result_rows(results: list, local_host_sentinel: str) -> str:
     rows = []
     for step_name, group in groupby(results, key=lambda r: r.step_name):
@@ -217,6 +267,8 @@ def _build_result_rows(results: list, local_host_sentinel: str) -> str:
                 detail_html = _iperf_detail(r.output_file)
             elif r.action == "adb_control" and r.output_file and r.output_file.exists():
                 detail_html = _adb_detail(r.output_file)
+            elif r.action == "vatt_control" and r.output_file and r.output_file.exists():
+                detail_html = _vatt_detail(r.output_file)
 
             error_html = (
                 f'<div class="error-msg">エラー: {_h(r.error)}</div>'
@@ -279,6 +331,8 @@ _CSS = """
              font-size: 11px; font-weight: 600; white-space: nowrap; }
     .action-ping       { background: #dbeafe; color: #1e40af; }
     .action-iperf      { background: #dcfce7; color: #166534; }
+    .action-adb_control { background: #fce7f3; color: #9d174d; }
+    .action-vatt_control { background: #e0f2fe; color: #075985; }
     .action-logcollect { background: #fef9c3; color: #854d0e; }
     .action-wait       { background: #f3e8ff; color: #6b21a8; }
     .exec-sequential   { background: #e2e8f0; color: #475569; }

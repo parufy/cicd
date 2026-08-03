@@ -67,18 +67,35 @@ def _build_remote_cmd(args: argparse.Namespace) -> list[str]:
     return cmd
 
 
+def _extract_json_object(text: str) -> dict | None:
+    decoder = json.JSONDecoder()
+    for idx, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text[idx:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
+
+
 def run_vatt_control(args: argparse.Namespace) -> bool:
     output_file = Path(args.output)
+    history_file = output_file.with_name("vatt_history.jsonl")
     report = {
         "timestamp": datetime.now().isoformat(),
         "exec_mode": "ssh" if args.ssh_host else "local",
         "exec_on": args.ssh_host or "local",
         "mode": args.mode,
         "remote_dir": args.remote_dir,
+        "history_file": str(history_file),
         "deployed": False,
         "returncode": None,
         "stdout": [],
         "stderr": [],
+        "vatt_result": None,
         "success": False,
     }
 
@@ -114,6 +131,7 @@ def run_vatt_control(args: argparse.Namespace) -> bool:
         report["returncode"] = rc
         report["stdout"] = stdout.splitlines()
         report["stderr"] = stderr.splitlines()
+        report["vatt_result"] = _extract_json_object(stdout)
         report["success"] = rc == 0
         return rc == 0
     except Exception as exc:
@@ -126,6 +144,8 @@ def run_vatt_control(args: argparse.Namespace) -> bool:
             json.dumps(report, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        with history_file.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(report, ensure_ascii=False) + "\n")
         logger.info("VATT result written to %s", output_file)
 
 

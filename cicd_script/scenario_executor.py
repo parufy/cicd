@@ -73,6 +73,12 @@ def _resolve_env(value: str) -> str:
 
 
 # ─── データクラス ────────────────────────────────────────────────
+def _safe_filename(value: str) -> str:
+    """Convert a step name to a stable file name fragment."""
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._")
+    return name or "step"
+
+
 @dataclass
 class HostConfig:
     name: str
@@ -555,7 +561,8 @@ class ActionExecutor:
                 ),
             )
 
-        output_file = self.output_dir / p.get("output_file", f"vatt_{mode}_result.json")
+        default_output = f"vatt_{mode}_{_safe_filename(step.name)}.json"
+        output_file = self.output_dir / p.get("output_file", default_output)
         local_vatt_dir = Path(__file__).parent / "vatt_cnt"
         remote_dir = p.get("remote_dir", r"C:\cicd\vatt_cnt")
         cmd = [
@@ -599,7 +606,14 @@ class ActionExecutor:
                 cmd += [flag, str(p[key])]
         if p.get("channels"):
             cmd += ["--channels"] + [str(ch) for ch in p["channels"]]
-        return self._run_script(step, cmd, result_file=output_file)
+        result = self._run_script(step, cmd, result_file=output_file)
+        self._log_vatt_console_summary(output_file)
+        return result
+
+    def _log_vatt_console_summary(self, result_file: Path) -> None:
+        summary = _load_vatt_summary(result_file)
+        if summary:
+            self.log.info(f"  VATT: {summary}")
 
     # ── 共通スクリプト実行ヘルパー ──────────────────────────────
     def _run_script(self, step: ScenarioStep, cmd: list[str], result_file: "Path | None" = None) -> StepResult:
@@ -796,6 +810,41 @@ def _load_iperf_summary(result_file: Path) -> str | None:
 
 
 # ─── レポート出力 ─────────────────────────────────────────────
+def _load_vatt_summary(result_file: Path) -> str | None:
+    """Load a compact VATT summary for GitLab console output."""
+    try:
+        with open(result_file, encoding="utf-8") as f:
+            data = json.load(f)
+
+        mode = data.get("mode", "unknown")
+        rc = data.get("returncode")
+        deployed = data.get("deployed")
+        vatt_result = data.get("vatt_result") or {}
+        message = vatt_result.get("message") or ""
+        values = vatt_result.get("values")
+
+        parts = [f"mode={mode}"]
+        if deployed is not None:
+            parts.append(f"deployed={deployed}")
+        if rc is not None:
+            parts.append(f"returncode={rc}")
+        if values:
+            value_parts = []
+            for ch, value in sorted(values.items(), key=lambda item: int(item[0])):
+                value_parts.append(f"ch{ch}={float(value):.2f} dB")
+            parts.append("attenuation: " + ", ".join(value_parts))
+        elif message:
+            parts.append(f"message={message}")
+
+        if not data.get("success", False):
+            stderr = data.get("stderr") or []
+            if stderr:
+                parts.append("error=" + " / ".join(str(line) for line in stderr[-3:]))
+        return "  ".join(parts)
+    except Exception:
+        return None
+
+
 def print_report(results: list[StepResult]) -> bool:
     print("\n" + "=" * 70)
     print("  試験結果サマリ")
@@ -848,6 +897,11 @@ def print_report(results: list[StepResult]) -> bool:
                             print(f"         {t_str:>6}  {cli_str}  {srv_str}  {ret_str}")
                 except Exception:
                     pass
+
+            elif r.action == "vatt_control" and r.output_file and r.output_file.exists():
+                summary = _load_vatt_summary(r.output_file)
+                if summary:
+                    print(f"         {summary}")
 
             if not r.success:
                 print(f"         → エラー: {r.error}")
