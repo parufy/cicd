@@ -814,7 +814,9 @@ def _load_iperf_summary(result_file: Path) -> str | None:
 def _load_vatt_summary(result_file: Path) -> str | None:
     """Load a compact VATT summary for GitLab console output."""
     try:
-        with open(result_file, encoding="utf-8") as f:
+        # Older VATT result files were written as UTF-8 with BOM.  utf-8-sig
+        # accepts both those files and the BOM-less UTF-8 files written now.
+        with open(result_file, encoding="utf-8-sig") as f:
             data = json.load(f)
 
         mode = data.get("mode", "unknown")
@@ -825,20 +827,23 @@ def _load_vatt_summary(result_file: Path) -> str | None:
         message = vatt_result.get("message") or ""
         values = vatt_result.get("values")
 
-        parts = [f"mode={mode}"]
-        if deploy_requested is not None:
-            parts.append(f"deploy_requested={deploy_requested}")
-        if deployed is not None:
-            parts.append(f"deployed={deployed}")
-        if rc is not None:
-            parts.append(f"returncode={rc}")
+        parts = []
         if values:
             value_parts = []
             for ch, value in sorted(values.items(), key=lambda item: int(item[0])):
-                value_parts.append(f"ch{ch}={float(value):.2f} dB")
-            parts.append("attenuation: " + ", ".join(value_parts))
-        elif message:
-            parts.append(f"message={message}")
+                value_parts.append(f"CH{ch}={float(value):.2f} dB")
+            parts.append("ATT READBACK: " + " | ".join(value_parts))
+
+        metadata = [f"mode={mode}"]
+        if deploy_requested is not None:
+            metadata.append(f"deploy_requested={deploy_requested}")
+        if deployed is not None:
+            metadata.append(f"deployed={deployed}")
+        if rc is not None:
+            metadata.append(f"returncode={rc}")
+        if not values and message:
+            metadata.append(f"message={message}")
+        parts.append("  ".join(metadata))
 
         if not data.get("success", False):
             stderr = data.get("stderr") or []

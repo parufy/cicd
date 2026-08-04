@@ -153,7 +153,7 @@ def run_vatt_control(args: argparse.Namespace) -> bool:
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text(
             json.dumps(report, ensure_ascii=False, indent=2),
-            encoding="utf-8-sig",
+            encoding="utf-8",
         )
         _append_jsonl_utf8_sig(history_file, report)
         logger.info("VATT result written to %s", output_file)

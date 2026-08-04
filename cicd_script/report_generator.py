@@ -202,7 +202,8 @@ def _iperf_detail(result_file: Path) -> str:
 # ─── 結果テーブル ─────────────────────────────────────────────
 def _vatt_detail(result_file: Path) -> str:
     try:
-        d = json.loads(result_file.read_text(encoding="utf-8"))
+        # utf-8-sig reads both legacy BOM-prefixed results and current UTF-8.
+        d = json.loads(result_file.read_text(encoding="utf-8-sig"))
         vatt = d.get("vatt_result") or {}
         values = vatt.get("values") or {}
         mode = _h(d.get("mode", ""))
@@ -216,12 +217,12 @@ def _vatt_detail(result_file: Path) -> str:
         row_cls = "pass" if ok else "fail"
 
         if values:
-            value_rows = "".join(
-                f"<tr><td>ch{_h(ch)}</td><td class=\"num\">{float(value):.2f} dB</td></tr>"
+            value_chips = "".join(
+                f'<span class="att-value">CH{_h(ch)}&nbsp; {float(value):.2f} dB</span>'
                 for ch, value in sorted(values.items(), key=lambda item: int(item[0]))
             )
         else:
-            value_rows = '<tr><td colspan="2">N/A</td></tr>'
+            value_chips = '<span class="att-value unavailable">N/A</span>'
 
         stderr = d.get("stderr") or []
         err_html = ""
@@ -241,11 +242,10 @@ def _vatt_detail(result_file: Path) -> str:
               <td>{msg}</td>
             </tr>
           </table>
-          <div class="iv-title">ATT values</div>
-          <table class="inner">
-            <tr><th>Channel</th><th>Attenuation</th></tr>
-            {value_rows}
-          </table>
+          <div class="att-readback">
+            <div class="att-title">ATT読み出し値</div>
+            <div class="att-values">{value_chips}</div>
+          </div>
           {err_html}
         </div>"""
     except Exception:
@@ -348,6 +348,14 @@ _CSS = """
     .inner th { background: #f1f5f9; }
     .iv-title { margin: 8px 0 4px; font-size: 11px; font-weight: 600; color: #475569; }
     .iv-table { max-height: 220px; display: block; overflow-y: auto; }
+    .att-readback { margin-top: 8px; padding: 8px 10px; border-left: 3px solid #f97316;
+                    background: #fff7ed; }
+    .att-title { margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #7c2d12; }
+    .att-values { display: flex; flex-wrap: wrap; gap: 6px; }
+    .att-value { display: inline-block; padding: 3px 8px; border-radius: 10px;
+                 background: #ffedd5; color: #9a3412; font-weight: 600;
+                 font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .att-value.unavailable { background: #f1f5f9; color: #64748b; }
     .error-msg { color: #dc2626; font-size: 12px; margin-top: 4px; }
 """
 
