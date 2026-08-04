@@ -91,6 +91,19 @@ def _append_jsonl_utf8_sig(path: Path, item: dict) -> None:
         path.write_text(line, encoding="utf-8-sig")
 
 
+def _requested_settings(args: argparse.Namespace) -> dict | None:
+    """Record requested set values without reading them back from the device."""
+    if args.attenuation_db is None:
+        return None
+    if args.mode == "set" and args.channel is not None:
+        return {str(args.channel): args.attenuation_db}
+    if args.mode == "set_all":
+        if args.channels:
+            return {str(channel): args.attenuation_db for channel in args.channels}
+        return {"all": args.attenuation_db}
+    return None
+
+
 def run_vatt_control(args: argparse.Namespace) -> bool:
     output_file = Path(args.output)
     history_file = output_file.with_name("vatt_history.jsonl")
@@ -106,6 +119,7 @@ def run_vatt_control(args: argparse.Namespace) -> bool:
         "returncode": None,
         "stdout": [],
         "stderr": [],
+        "requested_settings": _requested_settings(args),
         "vatt_result": None,
         "success": False,
     }

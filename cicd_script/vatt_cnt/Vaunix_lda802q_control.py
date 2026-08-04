@@ -540,6 +540,7 @@ def run_cli(args: argparse.Namespace) -> dict:
         "serial": args.serial,
         "success": False,
         "message": "",
+        "settings": None,
         "values": None,
     }
 
@@ -552,17 +553,23 @@ def run_cli(args: argparse.Namespace) -> dict:
             report["values"] = lda.get_all_channel_attenuations(args.channels)
             report["message"] = "status acquired"
         elif args.mode == "set":
+            channel = _require(args.channel, "--channel")
+            attenuation_db = _require(args.attenuation_db, "--attenuation-db")
             lda.set_channel(
-                _require(args.channel, "--channel"),
-                _require(args.attenuation_db, "--attenuation-db"),
+                channel,
+                attenuation_db,
             )
             report["message"] = "channel attenuation set"
+            report["settings"] = {channel: attenuation_db}
         elif args.mode == "set_all":
+            attenuation_db = _require(args.attenuation_db, "--attenuation-db")
+            channels = args.channels or list(range(1, lda.num_channels + 1))
             lda.set_all_channels(
-                _require(args.attenuation_db, "--attenuation-db"),
-                args.channels,
+                attenuation_db,
+                channels,
             )
             report["message"] = "attenuation set"
+            report["settings"] = {channel: attenuation_db for channel in channels}
         elif args.mode == "ramp":
             params = RampParams(
                 start_db=_require(args.start_db, "--start-db"),
@@ -598,6 +605,7 @@ def main() -> None:
             "serial": args.serial,
             "success": False,
             "message": str(exc),
+            "settings": None,
             "values": None,
         }
         rc = 1

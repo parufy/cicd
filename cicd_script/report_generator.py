@@ -205,6 +205,7 @@ def _vatt_detail(result_file: Path) -> str:
         # utf-8-sig reads both legacy BOM-prefixed results and current UTF-8.
         d = json.loads(result_file.read_text(encoding="utf-8-sig"))
         vatt = d.get("vatt_result") or {}
+        settings = vatt.get("settings") or d.get("requested_settings") or {}
         values = vatt.get("values") or {}
         mode = _h(d.get("mode", ""))
         exec_mode = _h(d.get("exec_mode", ""))
@@ -215,6 +216,24 @@ def _vatt_detail(result_file: Path) -> str:
         msg = _h(vatt.get("message") or "")
         ok = d.get("success", False)
         row_cls = "pass" if ok else "fail"
+
+        if settings:
+            setting_chips = "".join(
+                f'<span class="att-setting-value">'
+                f'{"ALL CHANNELS" if str(ch).lower() == "all" else "CH" + _h(ch)}'
+                f'&nbsp; {float(value):.2f} dB</span>'
+                for ch, value in sorted(
+                    settings.items(),
+                    key=lambda item: (str(item[0]).lower() == "all", int(item[0]) if str(item[0]).isdigit() else 0),
+                )
+            )
+            setting_html = f"""
+          <div class="att-setting">
+            <div class="att-setting-title">ATT設定値</div>
+            <div class="att-values">{setting_chips}</div>
+          </div>"""
+        else:
+            setting_html = ""
 
         if values:
             value_chips = "".join(
@@ -253,6 +272,7 @@ def _vatt_detail(result_file: Path) -> str:
               <td>{msg}</td>
             </tr>
           </table>
+          {setting_html}
           {readback_html}
           {err_html}
         </div>"""
@@ -356,6 +376,12 @@ _CSS = """
     .inner th { background: #f1f5f9; }
     .iv-title { margin: 8px 0 4px; font-size: 11px; font-weight: 600; color: #475569; }
     .iv-table { max-height: 220px; display: block; overflow-y: auto; }
+    .att-setting { margin-top: 8px; padding: 8px 10px; border-left: 3px solid #2563eb;
+                   background: #eff6ff; }
+    .att-setting-title { margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #1e3a8a; }
+    .att-setting-value { display: inline-block; padding: 3px 8px; border-radius: 10px;
+                         background: #dbeafe; color: #1e40af; font-weight: 600;
+                         font-variant-numeric: tabular-nums; white-space: nowrap; }
     .att-readback { margin-top: 8px; padding: 8px 10px; border-left: 3px solid #f97316;
                     background: #fff7ed; }
     .att-title { margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #7c2d12; }

@@ -825,9 +825,19 @@ def _load_vatt_summary(result_file: Path) -> str | None:
         deployed = data.get("deployed")
         vatt_result = data.get("vatt_result") or {}
         message = vatt_result.get("message") or ""
+        settings = vatt_result.get("settings") or data.get("requested_settings")
         values = vatt_result.get("values")
 
         parts = []
+        if settings:
+            setting_parts = []
+            for ch, value in sorted(
+                settings.items(),
+                key=lambda item: (str(item[0]).lower() == "all", int(item[0]) if str(item[0]).isdigit() else 0),
+            ):
+                channel_label = "ALL CHANNELS" if str(ch).lower() == "all" else f"CH{ch}"
+                setting_parts.append(f"{channel_label}={float(value):.2f} dB")
+            parts.append("ATT SETTING: " + " | ".join(setting_parts))
         if values:
             value_parts = []
             for ch, value in sorted(values.items(), key=lambda item: int(item[0])):
@@ -841,7 +851,7 @@ def _load_vatt_summary(result_file: Path) -> str | None:
             metadata.append(f"deployed={deployed}")
         if rc is not None:
             metadata.append(f"returncode={rc}")
-        if not values and message:
+        if not values and not settings and message:
             metadata.append(f"message={message}")
         parts.append("  ".join(metadata))
 
