@@ -557,14 +557,12 @@ def run_cli(args: argparse.Namespace) -> dict:
                 _require(args.attenuation_db, "--attenuation-db"),
             )
             report["message"] = "channel attenuation set"
-            report["values"] = lda.get_all_channel_attenuations([args.channel])
         elif args.mode == "set_all":
             lda.set_all_channels(
                 _require(args.attenuation_db, "--attenuation-db"),
                 args.channels,
             )
             report["message"] = "attenuation set"
-            report["values"] = lda.get_all_channel_attenuations(args.channels)
         elif args.mode == "ramp":
             params = RampParams(
                 start_db=_require(args.start_db, "--start-db"),

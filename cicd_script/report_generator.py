@@ -221,8 +221,19 @@ def _vatt_detail(result_file: Path) -> str:
                 f'<span class="att-value">CH{_h(ch)}&nbsp; {float(value):.2f} dB</span>'
                 for ch, value in sorted(values.items(), key=lambda item: int(item[0]))
             )
+            readback_html = f"""
+          <div class="att-readback">
+            <div class="att-title">ATT読み出し値</div>
+            <div class="att-values">{value_chips}</div>
+          </div>"""
+        elif d.get("mode") == "status":
+            readback_html = """
+          <div class="att-readback">
+            <div class="att-title">ATT読み出し値</div>
+            <div class="att-values"><span class="att-value unavailable">N/A</span></div>
+          </div>"""
         else:
-            value_chips = '<span class="att-value unavailable">N/A</span>'
+            readback_html = ""
 
         stderr = d.get("stderr") or []
         err_html = ""
@@ -242,10 +253,7 @@ def _vatt_detail(result_file: Path) -> str:
               <td>{msg}</td>
             </tr>
           </table>
-          <div class="att-readback">
-            <div class="att-title">ATT読み出し値</div>
-            <div class="att-values">{value_chips}</div>
-          </div>
+          {readback_html}
           {err_html}
         </div>"""
     except Exception:
