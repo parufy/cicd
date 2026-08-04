@@ -83,3 +83,29 @@ operations:
       stop_db: 20.0
       step_db: 1.0
       dwell_ms: 50
+
+  vatt.multi_ramp_demo:
+    action: vatt_control
+    params:
+      mode: ramp_multi
+      ramps:
+        - channel: 1
+          start_db: 0.0
+          stop_db: 20.0
+          step_db: 1.0
+          dwell_ms: 1000
+        - channel: 2
+          start_db: 10.0
+          stop_db: 50.0
+          step_db: 2.0
+          dwell_ms: 500
+        - channel: 3
+          start_db: 100.0
+          stop_db: 20.0
+          step_db: 5.0
+          dwell_ms: 2000
+        - channel: 4
+          start_db: 30.0
+          stop_db: 80.0
+          step_db: 0.5
+          dwell_ms: 250

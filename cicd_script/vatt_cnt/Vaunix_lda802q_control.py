@@ -44,6 +44,7 @@ API仕様のポイント (マニュアルより)
 from __future__ import annotations
 
 import argparse
+import base64
 import ctypes
 import json
 import os
@@ -190,6 +191,8 @@ class VaunixLDA802Q:
         dll.fnLDA_SetRampBidirectional.restype = I
         dll.fnLDA_StartRamp.argtypes = [U, B]
         dll.fnLDA_StartRamp.restype = I
+        dll.fnLDA_StartRampMC.argtypes = [U, I, I, B]
+        dll.fnLDA_StartRampMC.restype = I
         dll.fnLDA_SaveSettings.argtypes = [U]
         dll.fnLDA_SaveSettings.restype = I
 
@@ -390,24 +393,8 @@ class VaunixLDA802Q:
     # エンジンを使用する (fnLDA_SetRampStartHR等でパラメータ設定 →
     # fnLDA_StartRampでそのchのみランプ開始)。
     # ------------------------------------------------------------------
-    def ramp_channel(self, channel: int, params: RampParams, go: bool = True) -> None:
-        """
-        指定した1チャンネルのみ、ハードウェアランプ(掃引)パラメータを設定し、
-        go=True の場合はそのままランプを開始する。
-
-        Args:
-            channel: 対象チャンネル番号 (1〜num_channels)
-            params: RampParams (開始値/終了値/ステップ/dwell時間/繰り返し等)
-            go: True の場合、パラメータ設定後に即座にランプを開始する。
-                False の場合、パラメータ設定のみ行い、開始は行わない
-                (別途 start_ramp(channel) で開始できる)。
-
-        Example:
-            lda.ramp_channel(
-                3,
-                RampParams(start_db=0.0, stop_db=30.0, step_db=1.0, dwell_ms=50),
-            )
-        """
+    def _configure_ramp_channel(self, channel: int, params: RampParams) -> None:
+        """指定チャンネルのランプパラメータを、開始せずに設定する。"""
         self._check_channel(channel)
         self._check_atten_range(params.start_db)
         self._check_atten_range(params.stop_db)
@@ -471,6 +458,9 @@ class VaunixLDA802Q:
             f"SetRampBidirectional(ch={channel})",
         )
 
+    def ramp_channel(self, channel: int, params: RampParams, go: bool = True) -> None:
+        """指定した1チャンネルのランプを設定し、必要なら開始する。"""
+        self._configure_ramp_channel(channel, params)
         if go:
             self.start_ramp(channel, go=True)
             print(f"[ramp_channel] ch{channel} のランプを開始しました "
@@ -478,6 +468,59 @@ class VaunixLDA802Q:
                   f"step={params.step_db}dB, dwell={params.dwell_ms}ms)")
         else:
             print(f"[ramp_channel] ch{channel} のランプパラメータを設定しました (未開始)")
+
+    @staticmethod
+    def _ramp_mode(params: RampParams) -> int:
+        """VaunixマルチチャンネルAPI用のランプモードを生成する。"""
+        mode = 0x02 if params.repeat else 0x01
+        if params.stop_db < params.start_db:
+            mode |= 0x04
+        if params.bidirectional:
+            mode |= 0x10
+        return mode
+
+    def ramp_channels(
+        self,
+        ramps: Dict[int, RampParams],
+        go: bool = True,
+    ) -> list[dict]:
+        """
+        チャンネル別のランプを全て設定した後、モード単位でまとめて開始する。
+
+        同じ方向・repeat・bidirectional設定のチャンネルは、1回の
+        fnLDA_StartRampMC呼び出しで同時開始される。モードが異なる場合も、
+        同一プロセス内で開始APIを連続して呼ぶため、別ジョブ実行より差が小さい。
+        """
+        if not ramps:
+            raise ValueError("ramps は1件以上指定してください")
+
+        mode_groups: Dict[int, list[int]] = {}
+        for channel, params in ramps.items():
+            self._configure_ramp_channel(channel, params)
+            mode_groups.setdefault(self._ramp_mode(params), []).append(channel)
+
+        start_groups = []
+        for mode, channels in sorted(mode_groups.items()):
+            chmask = self._chmask(channels)
+            start_groups.append({"mode": mode, "channels": channels, "chmask": chmask})
+            if go:
+                self._check(
+                    self.dll.fnLDA_StartRampMC(
+                        self.device_id,
+                        mode,
+                        chmask,
+                        ctypes.c_bool(False),
+                    ),
+                    f"StartRampMC(mode=0x{mode:X}, chmask=0x{chmask:X})",
+                )
+
+        action = "開始" if go else "設定"
+        channels_text = ", ".join(f"ch{ch}" for ch in sorted(ramps))
+        print(
+            f"[ramp_channels] {channels_text} のランプを{action}しました "
+            f"(start_calls={len(start_groups)})"
+        )
+        return start_groups
 
     def start_ramp(self, channel: int, go: bool = True) -> None:
         """
@@ -505,7 +548,7 @@ class VaunixLDA802Q:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Vaunix LDA-802Q control")
     parser.add_argument("--mode", required=True,
-                        choices=["status", "set", "set_all", "ramp", "stop_ramp"])
+                        choices=["status", "set", "set_all", "ramp", "ramp_multi", "stop_ramp"])
     parser.add_argument("--serial", type=int, default=None)
     parser.add_argument("--dll-dir", type=str, default=r"C:\Vaunix")
     parser.add_argument("--test-mode", action="store_true")
@@ -520,6 +563,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dwell-ms2", type=int, default=None)
     parser.add_argument("--idle-ms", type=int, default=0)
     parser.add_argument("--hold-ms", type=int, default=0)
+    parser.add_argument("--ramps-b64", default=None)
     parser.add_argument("--bidirectional", action="store_true")
     parser.add_argument("--repeat", action="store_true")
     parser.add_argument("--no-go", action="store_true")
@@ -533,6 +577,42 @@ def _require(value, name: str):
     return value
 
 
+def _decode_ramp_specs(encoded: str | None) -> list[dict]:
+    if not encoded:
+        raise ValueError("--ramps-b64 is required")
+    try:
+        decoded = base64.urlsafe_b64decode(encoded.encode("ascii"))
+        specs = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("--ramps-b64 contains invalid ramp JSON") from exc
+    if not isinstance(specs, list) or not specs:
+        raise ValueError("ramps must be a non-empty list")
+    return specs
+
+
+def _build_multi_ramps(specs: list[dict]) -> Dict[int, RampParams]:
+    ramps: Dict[int, RampParams] = {}
+    for index, spec in enumerate(specs, 1):
+        if not isinstance(spec, dict):
+            raise ValueError(f"ramps[{index}] must be an object")
+        channel = int(_require(spec.get("channel"), f"ramps[{index}].channel"))
+        if channel in ramps:
+            raise ValueError(f"channel {channel} is duplicated in ramps")
+        ramps[channel] = RampParams(
+            start_db=float(_require(spec.get("start_db"), f"ramps[{index}].start_db")),
+            stop_db=float(_require(spec.get("stop_db"), f"ramps[{index}].stop_db")),
+            step_db=float(spec.get("step_db", 0.5)),
+            dwell_ms=int(spec.get("dwell_ms", 50)),
+            step_db2=(float(spec["step_db2"]) if spec.get("step_db2") is not None else None),
+            dwell_ms2=(int(spec["dwell_ms2"]) if spec.get("dwell_ms2") is not None else None),
+            idle_ms=int(spec.get("idle_ms", 0)),
+            hold_ms=int(spec.get("hold_ms", 0)),
+            bidirectional=bool(spec.get("bidirectional", False)),
+            repeat=bool(spec.get("repeat", False)),
+        )
+    return ramps
+
+
 def run_cli(args: argparse.Namespace) -> dict:
     report = {
         "timestamp": datetime.now().isoformat(),
@@ -541,6 +621,8 @@ def run_cli(args: argparse.Namespace) -> dict:
         "success": False,
         "message": "",
         "settings": None,
+        "ramps": None,
+        "start_groups": None,
         "values": None,
     }
 
@@ -585,6 +667,15 @@ def run_cli(args: argparse.Namespace) -> dict:
             )
             lda.ramp_channel(_require(args.channel, "--channel"), params, go=not args.no_go)
             report["message"] = "ramp configured"
+        elif args.mode == "ramp_multi":
+            ramp_specs = _decode_ramp_specs(args.ramps_b64)
+            ramps = _build_multi_ramps(ramp_specs)
+            report["start_groups"] = lda.ramp_channels(ramps, go=not args.no_go)
+            report["ramps"] = ramp_specs
+            report["message"] = (
+                "multi-channel ramps started"
+                if not args.no_go else "multi-channel ramps configured"
+            )
         elif args.mode == "stop_ramp":
             lda.stop_ramp(_require(args.channel, "--channel"))
             report["message"] = "ramp stopped"
@@ -606,6 +697,8 @@ def main() -> None:
             "success": False,
             "message": str(exc),
             "settings": None,
+            "ramps": None,
+            "start_groups": None,
             "values": None,
         }
         rc = 1

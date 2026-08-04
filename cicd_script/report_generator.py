@@ -206,6 +206,8 @@ def _vatt_detail(result_file: Path) -> str:
         d = json.loads(result_file.read_text(encoding="utf-8-sig"))
         vatt = d.get("vatt_result") or {}
         settings = vatt.get("settings") or d.get("requested_settings") or {}
+        ramps = vatt.get("ramps") or d.get("requested_ramps") or []
+        start_groups = vatt.get("start_groups") or []
         values = vatt.get("values") or {}
         mode = _h(d.get("mode", ""))
         exec_mode = _h(d.get("exec_mode", ""))
@@ -234,6 +236,30 @@ def _vatt_detail(result_file: Path) -> str:
           </div>"""
         else:
             setting_html = ""
+
+        if ramps:
+            ramp_rows = "".join(
+                f"<tr><td>CH{_h(spec.get('channel'))}</td>"
+                f"<td class=\"num\">{float(spec.get('start_db')):.2f} dB</td>"
+                f"<td class=\"num\">{float(spec.get('stop_db')):.2f} dB</td>"
+                f"<td class=\"num\">{float(spec.get('step_db', 0.5)):.2f} dB</td>"
+                f"<td class=\"num\">{int(spec.get('dwell_ms', 50))} ms</td>"
+                f"<td>{'Yes' if spec.get('repeat', False) else 'No'}</td>"
+                f"<td>{'Yes' if spec.get('bidirectional', False) else 'No'}</td></tr>"
+                for spec in sorted(ramps, key=lambda item: int(item["channel"]))
+            )
+            ramp_html = f"""
+          <div class="ramp-config">
+            <div class="ramp-title">チャンネル別Ramp設定</div>
+            <table class="inner ramp-table">
+              <tr><th>Channel</th><th>Start</th><th>Stop</th><th>Step</th>
+                  <th>Dwell</th><th>Repeat</th><th>Bidirectional</th></tr>
+              {ramp_rows}
+            </table>
+            <div class="ramp-start-info">一括開始API呼び出し回数: {len(start_groups) if start_groups else 'N/A'}</div>
+          </div>"""
+        else:
+            ramp_html = ""
 
         if values:
             value_chips = "".join(
@@ -273,6 +299,7 @@ def _vatt_detail(result_file: Path) -> str:
             </tr>
           </table>
           {setting_html}
+          {ramp_html}
           {readback_html}
           {err_html}
         </div>"""
@@ -382,6 +409,11 @@ _CSS = """
     .att-setting-value { display: inline-block; padding: 3px 8px; border-radius: 10px;
                          background: #dbeafe; color: #1e40af; font-weight: 600;
                          font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .ramp-config { margin-top: 8px; padding: 8px 10px; border-left: 3px solid #7c3aed;
+                   background: #f5f3ff; }
+    .ramp-title { margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #5b21b6; }
+    .ramp-table { min-width: 650px; }
+    .ramp-start-info { margin-top: 5px; font-size: 11px; color: #5b21b6; }
     .att-readback { margin-top: 8px; padding: 8px 10px; border-left: 3px solid #f97316;
                     background: #fff7ed; }
     .att-title { margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #7c2d12; }

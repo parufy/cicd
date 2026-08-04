@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import logging
 import subprocess
@@ -54,6 +55,7 @@ def _build_remote_cmd(args: argparse.Namespace) -> list[str]:
     _append_optional(cmd, "--dwell-ms2", args.dwell_ms2)
     _append_optional(cmd, "--idle-ms", args.idle_ms)
     _append_optional(cmd, "--hold-ms", args.hold_ms)
+    _append_optional(cmd, "--ramps-b64", args.ramps_b64)
     if args.channels:
         cmd += ["--channels", *[str(ch) for ch in args.channels]]
     if args.test_mode:
@@ -104,6 +106,17 @@ def _requested_settings(args: argparse.Namespace) -> dict | None:
     return None
 
 
+def _requested_ramps(args: argparse.Namespace) -> list[dict] | None:
+    if not args.ramps_b64:
+        return None
+    try:
+        decoded = base64.urlsafe_b64decode(args.ramps_b64.encode("ascii"))
+        value = json.loads(decoded.decode("utf-8"))
+        return value if isinstance(value, list) else None
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+
 def run_vatt_control(args: argparse.Namespace) -> bool:
     output_file = Path(args.output)
     history_file = output_file.with_name("vatt_history.jsonl")
@@ -120,6 +133,7 @@ def run_vatt_control(args: argparse.Namespace) -> bool:
         "stdout": [],
         "stderr": [],
         "requested_settings": _requested_settings(args),
+        "requested_ramps": _requested_ramps(args),
         "vatt_result": None,
         "success": False,
     }
@@ -176,7 +190,7 @@ def run_vatt_control(args: argparse.Namespace) -> bool:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="VATT control over SSH")
     parser.add_argument("--mode", required=True,
-                        choices=["status", "set", "set_all", "ramp", "stop_ramp"])
+                        choices=["status", "set", "set_all", "ramp", "ramp_multi", "stop_ramp"])
     parser.add_argument("--local-vatt-dir", required=True)
     parser.add_argument("--remote-dir", default=r"C:\cicd\vatt_cnt")
     parser.add_argument("--python-path", default="python")
@@ -193,6 +207,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dwell-ms2", type=int, default=None)
     parser.add_argument("--idle-ms", type=int, default=None)
     parser.add_argument("--hold-ms", type=int, default=None)
+    parser.add_argument("--ramps-b64", default=None)
     parser.add_argument("--test-mode", action="store_true")
     parser.add_argument("--no-go", action="store_true")
     parser.add_argument("--bidirectional", action="store_true")

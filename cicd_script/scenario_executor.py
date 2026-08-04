@@ -19,6 +19,7 @@ GitLab CI/CD パイプライン 自動試験実行エンジン
 """
 
 import argparse
+import base64
 import json
 
 from report_generator import generate_html_report
@@ -552,13 +553,13 @@ class ActionExecutor:
     def _action_vatt_control(self, step: ScenarioStep) -> StepResult:
         p = step.params
         mode = str(p.get("mode", "status")).lower()
-        if mode not in ("status", "set", "set_all", "ramp", "stop_ramp"):
+        if mode not in ("status", "set", "set_all", "ramp", "ramp_multi", "stop_ramp"):
             return StepResult(
                 host=self._label, step_name=step.name, action="vatt_control",
                 success=False,
                 error=(
                     f"Invalid mode '{mode}' "
-                    "(valid: status / set / set_all / ramp / stop_ramp)"
+                    "(valid: status / set / set_all / ramp / ramp_multi / stop_ramp)"
                 ),
             )
 
@@ -588,6 +589,17 @@ class ActionExecutor:
             cmd.append("--bidirectional")
         if p.get("repeat", False):
             cmd.append("--repeat")
+        if mode == "ramp_multi":
+            ramps = p.get("ramps")
+            if not isinstance(ramps, list) or not ramps:
+                return StepResult(
+                    host=self._label, step_name=step.name, action="vatt_control",
+                    success=False,
+                    error="ramp_multi requires a non-empty params.ramps list",
+                )
+            ramps_json = json.dumps(ramps, ensure_ascii=False, separators=(",", ":"))
+            ramps_b64 = base64.urlsafe_b64encode(ramps_json.encode("utf-8")).decode("ascii")
+            cmd += ["--ramps-b64", ramps_b64]
 
         optional_args = [
             ("serial", "--serial"),
@@ -826,6 +838,8 @@ def _load_vatt_summary(result_file: Path) -> str | None:
         vatt_result = data.get("vatt_result") or {}
         message = vatt_result.get("message") or ""
         settings = vatt_result.get("settings") or data.get("requested_settings")
+        ramps = vatt_result.get("ramps") or data.get("requested_ramps")
+        start_groups = vatt_result.get("start_groups") or []
         values = vatt_result.get("values")
 
         parts = []
@@ -838,6 +852,20 @@ def _load_vatt_summary(result_file: Path) -> str | None:
                 channel_label = "ALL CHANNELS" if str(ch).lower() == "all" else f"CH{ch}"
                 setting_parts.append(f"{channel_label}={float(value):.2f} dB")
             parts.append("ATT SETTING: " + " | ".join(setting_parts))
+        if ramps:
+            ramp_parts = []
+            for spec in sorted(ramps, key=lambda item: int(item["channel"])):
+                ramp_parts.append(
+                    f"CH{spec['channel']}={float(spec['start_db']):.2f}"
+                    f"->{float(spec['stop_db']):.2f} dB"
+                    f" step={float(spec.get('step_db', 0.5)):.2f} dB"
+                    f" dwell={int(spec.get('dwell_ms', 50))} ms"
+                )
+            start_call_count = len(start_groups) if start_groups else "N/A"
+            parts.append(
+                "RAMP CONFIG: " + " | ".join(ramp_parts)
+                + f"  start_calls={start_call_count}"
+            )
         if values:
             value_parts = []
             for ch, value in sorted(values.items(), key=lambda item: int(item[0])):
@@ -851,7 +879,7 @@ def _load_vatt_summary(result_file: Path) -> str | None:
             metadata.append(f"deployed={deployed}")
         if rc is not None:
             metadata.append(f"returncode={rc}")
-        if not values and not settings and message:
+        if not values and not settings and not ramps and message:
             metadata.append(f"message={message}")
         parts.append("  ".join(metadata))
 

@@ -36,6 +36,37 @@ scenarios:
 
 既存の `action` / `execution` / `params` を直接書く形式も引き続き利用できます。
 
+## 複数チャンネルRampの同時開始
+
+`mode: ramp_multi` では、チャンネルごとに異なるRamp設定を指定できます。
+全チャンネルのパラメータを設定した後、VaunixのマルチチャンネルAPIで開始します。
+
+```yaml
+scenarios:
+  - name: CH1-4 Ramp開始
+    action: vatt_control
+    execution: sequential
+    params:
+      mode: ramp_multi
+      ramps:
+        - channel: 1
+          start_db: 0.0
+          stop_db: 20.0
+          step_db: 1.0
+          dwell_ms: 1000
+          repeat: true
+        - channel: 2
+          start_db: 10.0
+          stop_db: 50.0
+          step_db: 2.0
+          dwell_ms: 500
+          repeat: true
+```
+
+同じ方向・`repeat`・`bidirectional` のチャンネルは1回のAPI呼び出しで開始されます。
+これらのモードが異なるチャンネルは、モード別にまとめて開始APIを連続呼び出しします。
+同一ATT機器に対する複数のRampステップを `execution: parallel` で実行しないでください。
+
 ## repeat の使い方
 
 同じ手順を繰り返す場合は `repeat` と `steps` を指定します。
