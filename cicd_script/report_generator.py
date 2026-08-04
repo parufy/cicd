@@ -208,6 +208,7 @@ def _vatt_detail(result_file: Path) -> str:
         mode = _h(d.get("mode", ""))
         exec_mode = _h(d.get("exec_mode", ""))
         exec_on = _h(d.get("exec_on", ""))
+        deploy_requested = _h(d.get("deploy_requested", ""))
         deployed = _h(d.get("deployed", ""))
         rc = _h(d.get("returncode", ""))
         msg = _h(vatt.get("message") or "")
@@ -230,10 +231,11 @@ def _vatt_detail(result_file: Path) -> str:
         return f"""
         <div class="detail">
           <table class="inner">
-            <tr><th>Mode</th><th>Exec</th><th>Deployed</th><th>Return code</th><th>Message</th></tr>
+            <tr><th>Mode</th><th>Exec</th><th>Deploy requested</th><th>Deployed</th><th>Return code</th><th>Message</th></tr>
             <tr class="{row_cls}">
               <td>{mode}</td>
               <td>{exec_mode} {_h(exec_on)}</td>
+              <td>{deploy_requested}</td>
               <td>{deployed}</td>
               <td class="num">{rc}</td>
               <td>{msg}</td>

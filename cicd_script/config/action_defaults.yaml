@@ -39,11 +39,10 @@ defaults:
   vatt_control:
     host: att_pc
     mode: status
-    deploy: true
+    deploy: false
     remote_dir: "C:\\cicd\\vatt_cnt"
     python_path: python
     dll_dir: "C:\\cicd\\vatt_cnt"
     serial:
     test_mode: false
     timeout: 600
-    output_file: vatt_result.json

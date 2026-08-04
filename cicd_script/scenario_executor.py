@@ -35,6 +35,7 @@ from datetime import datetime
 from itertools import groupby
 from pathlib import Path
 from typing import Iterator
+from uuid import uuid4
 
 import yaml
 
@@ -561,7 +562,7 @@ class ActionExecutor:
                 ),
             )
 
-        default_output = f"vatt_{mode}_{_safe_filename(step.name)}.json"
+        default_output = f"vatt_{mode}_{_safe_filename(step.name)}_{uuid4().hex[:8]}.json"
         output_file = self.output_dir / p.get("output_file", default_output)
         local_vatt_dir = Path(__file__).parent / "vatt_cnt"
         remote_dir = p.get("remote_dir", r"C:\cicd\vatt_cnt")
@@ -818,12 +819,15 @@ def _load_vatt_summary(result_file: Path) -> str | None:
 
         mode = data.get("mode", "unknown")
         rc = data.get("returncode")
+        deploy_requested = data.get("deploy_requested")
         deployed = data.get("deployed")
         vatt_result = data.get("vatt_result") or {}
         message = vatt_result.get("message") or ""
         values = vatt_result.get("values")
 
         parts = [f"mode={mode}"]
+        if deploy_requested is not None:
+            parts.append(f"deploy_requested={deploy_requested}")
         if deployed is not None:
             parts.append(f"deployed={deployed}")
         if rc is not None:

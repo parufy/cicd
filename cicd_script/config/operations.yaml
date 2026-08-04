@@ -52,6 +52,14 @@ operations:
     params:
       mode: status
 
+  vatt.init:
+    action: vatt_control
+    params:
+      mode: set_all
+      deploy: true
+      attenuation_db: 100.0
+      channels: [1, 2, 3, 4]
+
   vatt.set_all_20db:
     action: vatt_control
     params:

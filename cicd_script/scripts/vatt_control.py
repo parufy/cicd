@@ -81,6 +81,16 @@ def _extract_json_object(text: str) -> dict | None:
     return None
 
 
+def _append_jsonl_utf8_sig(path: Path, item: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(item, ensure_ascii=False) + "\n"
+    if path.exists() and path.stat().st_size > 0:
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line)
+    else:
+        path.write_text(line, encoding="utf-8-sig")
+
+
 def run_vatt_control(args: argparse.Namespace) -> bool:
     output_file = Path(args.output)
     history_file = output_file.with_name("vatt_history.jsonl")
@@ -91,6 +101,7 @@ def run_vatt_control(args: argparse.Namespace) -> bool:
         "mode": args.mode,
         "remote_dir": args.remote_dir,
         "history_file": str(history_file),
+        "deploy_requested": args.deploy,
         "deployed": False,
         "returncode": None,
         "stdout": [],
@@ -142,10 +153,9 @@ def run_vatt_control(args: argparse.Namespace) -> bool:
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text(
             json.dumps(report, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+            encoding="utf-8-sig",
         )
-        with history_file.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(report, ensure_ascii=False) + "\n")
+        _append_jsonl_utf8_sig(history_file, report)
         logger.info("VATT result written to %s", output_file)
 
 
