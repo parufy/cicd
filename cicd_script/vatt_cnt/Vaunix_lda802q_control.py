@@ -551,28 +551,23 @@ class VaunixLDA802Q:
         self.start_ramp(channel, go=False)
 
     def stop_ramps(self, channels: Iterable[int]) -> dict:
-        """指定した複数チャンネルのランプを1回のAPI呼び出しで停止する。"""
+        """指定した複数チャンネルのランプをチャンネルごとに停止する。"""
         channel_list = list(channels)
         if not channel_list:
             raise ValueError("channels は1件以上指定してください")
         if len(channel_list) != len(set(channel_list)):
             raise ValueError("channels に重複があります")
         chmask = self._chmask(channel_list)
-        self._check(
-            self.dll.fnLDA_StartRampMC(
-                self.device_id,
-                0,
-                chmask,
-                ctypes.c_bool(False),
-            ),
-            f"StopRampMC(chmask=0x{chmask:X})",
-        )
-        print(
-            "[stop_ramps] "
-            + ", ".join(f"ch{channel}" for channel in sorted(channel_list))
-            + f" のランプを停止しました (chmask=0x{chmask:X})"
-        )
-        return {"channels": sorted(channel_list), "chmask": chmask}
+        stopped_channels = []
+        for channel in sorted(channel_list):
+            self.stop_ramp(channel)
+            stopped_channels.append(channel)
+            print(f"[stop_ramps] CH{channel} のランプを停止しました")
+        return {
+            "channels": stopped_channels,
+            "chmask": chmask,
+            "method": "per_channel",
+        }
 
 
 # ==========================================================================
@@ -690,6 +685,7 @@ def run_cli(args: argparse.Namespace) -> dict:
         "start_groups": None,
         "stopped_channels": None,
         "stop_chmask": None,
+        "stop_method": None,
         "values": None,
     }
 
@@ -760,6 +756,7 @@ def run_cli(args: argparse.Namespace) -> dict:
             stop_result = lda.stop_ramps(_require(args.channels, "--channels"))
             report["stopped_channels"] = stop_result["channels"]
             report["stop_chmask"] = stop_result["chmask"]
+            report["stop_method"] = stop_result["method"]
             report["message"] = "multi-channel ramps stopped"
 
     report["success"] = True
@@ -784,6 +781,7 @@ def main() -> None:
             "start_groups": None,
             "stopped_channels": None,
             "stop_chmask": None,
+            "stop_method": None,
             "values": None,
         }
         rc = 1

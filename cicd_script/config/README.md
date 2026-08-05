@@ -91,7 +91,8 @@ scenarios:
 同一ATT機器に対する複数のRampステップを `execution: parallel` で実行しないでください。
 
 複数チャンネルのRampを一括停止する場合は、`mode: stop_ramp_multi` と
-停止対象の `channels` を指定します。指定していないチャンネルは停止しません。
+停止対象の `channels` を指定します。内部では対象チャンネルを順番に選択し、
+チャンネルごとの停止APIを連続実行します。指定していないチャンネルは停止しません。
 
 ```yaml
 scenarios:
