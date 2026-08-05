@@ -74,6 +74,20 @@ operations:
       channel: 1
       attenuation_db: 5.0
 
+  vatt.set_multi_demo:
+    action: vatt_control
+    params:
+      mode: set_multi
+      settings:
+        - channel: 1
+          attenuation_db: 10.0
+        - channel: 2
+          attenuation_db: 20.0
+        - channel: 3
+          attenuation_db: 30.0
+        - channel: 4
+          attenuation_db: 40.0
+
   vatt.ch1_ramp_0_20db:
     action: vatt_control
     params:
@@ -109,3 +123,9 @@ operations:
           stop_db: 80.0
           step_db: 0.5
           dwell_ms: 250
+
+  vatt.stop_ramp_ch1_ch3:
+    action: vatt_control
+    params:
+      mode: stop_ramp_multi
+      channels: [1, 3]

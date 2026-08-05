@@ -356,6 +356,15 @@ class VaunixLDA802Q:
         self._check(ret, f"fnLDA_SetAttenuationHRQ(ch={channel}, {atten_db}dB)")
         print(f"[set_channel] ch{channel} を {atten_db:.2f} dB に設定しました")
 
+    def set_channels(self, settings: Dict[int, float]) -> int:
+        """チャンネル別の異なるATT値を、同一接続内で連続設定する。"""
+        if not settings:
+            raise ValueError("settings は1件以上指定してください")
+        for channel, attenuation_db in settings.items():
+            self.set_channel(channel, attenuation_db)
+        print(f"[set_channels] {len(settings)} チャンネルのATT値を設定しました")
+        return len(settings)
+
     def get_channel_attenuation(self, channel: int) -> float:
         """指定した1チャンネルの現在のアッテネーション値[dB]を取得する"""
         self._select_channel(channel)
@@ -541,6 +550,30 @@ class VaunixLDA802Q:
         """指定した1チャンネルのランプを停止する"""
         self.start_ramp(channel, go=False)
 
+    def stop_ramps(self, channels: Iterable[int]) -> dict:
+        """指定した複数チャンネルのランプを1回のAPI呼び出しで停止する。"""
+        channel_list = list(channels)
+        if not channel_list:
+            raise ValueError("channels は1件以上指定してください")
+        if len(channel_list) != len(set(channel_list)):
+            raise ValueError("channels に重複があります")
+        chmask = self._chmask(channel_list)
+        self._check(
+            self.dll.fnLDA_StartRampMC(
+                self.device_id,
+                0,
+                chmask,
+                ctypes.c_bool(False),
+            ),
+            f"StopRampMC(chmask=0x{chmask:X})",
+        )
+        print(
+            "[stop_ramps] "
+            + ", ".join(f"ch{channel}" for channel in sorted(channel_list))
+            + f" のランプを停止しました (chmask=0x{chmask:X})"
+        )
+        return {"channels": sorted(channel_list), "chmask": chmask}
+
 
 # ==========================================================================
 # コマンドライン引数
@@ -548,7 +581,10 @@ class VaunixLDA802Q:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Vaunix LDA-802Q control")
     parser.add_argument("--mode", required=True,
-                        choices=["status", "set", "set_all", "ramp", "ramp_multi", "stop_ramp"])
+                        choices=[
+                            "status", "set", "set_all", "set_multi", "ramp", "ramp_multi",
+                            "stop_ramp", "stop_ramp_multi",
+                        ])
     parser.add_argument("--serial", type=int, default=None)
     parser.add_argument("--dll-dir", type=str, default=r"C:\Vaunix")
     parser.add_argument("--test-mode", action="store_true")
@@ -564,6 +600,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--idle-ms", type=int, default=0)
     parser.add_argument("--hold-ms", type=int, default=0)
     parser.add_argument("--ramps-b64", default=None)
+    parser.add_argument("--settings-b64", default=None)
     parser.add_argument("--bidirectional", action="store_true")
     parser.add_argument("--repeat", action="store_true")
     parser.add_argument("--no-go", action="store_true")
@@ -613,6 +650,33 @@ def _build_multi_ramps(specs: list[dict]) -> Dict[int, RampParams]:
     return ramps
 
 
+def _decode_setting_specs(encoded: str | None) -> list[dict]:
+    if not encoded:
+        raise ValueError("--settings-b64 is required")
+    try:
+        decoded = base64.urlsafe_b64decode(encoded.encode("ascii"))
+        specs = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("--settings-b64 contains invalid setting JSON") from exc
+    if not isinstance(specs, list) or not specs:
+        raise ValueError("settings must be a non-empty list")
+    return specs
+
+
+def _build_multi_settings(specs: list[dict]) -> Dict[int, float]:
+    settings: Dict[int, float] = {}
+    for index, spec in enumerate(specs, 1):
+        if not isinstance(spec, dict):
+            raise ValueError(f"settings[{index}] must be an object")
+        channel = int(_require(spec.get("channel"), f"settings[{index}].channel"))
+        if channel in settings:
+            raise ValueError(f"channel {channel} is duplicated in settings")
+        settings[channel] = float(
+            _require(spec.get("attenuation_db"), f"settings[{index}].attenuation_db")
+        )
+    return settings
+
+
 def run_cli(args: argparse.Namespace) -> dict:
     report = {
         "timestamp": datetime.now().isoformat(),
@@ -621,8 +685,11 @@ def run_cli(args: argparse.Namespace) -> dict:
         "success": False,
         "message": "",
         "settings": None,
+        "set_calls": None,
         "ramps": None,
         "start_groups": None,
+        "stopped_channels": None,
+        "stop_chmask": None,
         "values": None,
     }
 
@@ -643,6 +710,7 @@ def run_cli(args: argparse.Namespace) -> dict:
             )
             report["message"] = "channel attenuation set"
             report["settings"] = {channel: attenuation_db}
+            report["set_calls"] = 1
         elif args.mode == "set_all":
             attenuation_db = _require(args.attenuation_db, "--attenuation-db")
             channels = args.channels or list(range(1, lda.num_channels + 1))
@@ -652,6 +720,13 @@ def run_cli(args: argparse.Namespace) -> dict:
             )
             report["message"] = "attenuation set"
             report["settings"] = {channel: attenuation_db for channel in channels}
+            report["set_calls"] = 1
+        elif args.mode == "set_multi":
+            setting_specs = _decode_setting_specs(args.settings_b64)
+            settings = _build_multi_settings(setting_specs)
+            report["set_calls"] = lda.set_channels(settings)
+            report["settings"] = settings
+            report["message"] = "multiple channel attenuations set"
         elif args.mode == "ramp":
             params = RampParams(
                 start_db=_require(args.start_db, "--start-db"),
@@ -679,6 +754,13 @@ def run_cli(args: argparse.Namespace) -> dict:
         elif args.mode == "stop_ramp":
             lda.stop_ramp(_require(args.channel, "--channel"))
             report["message"] = "ramp stopped"
+            report["stopped_channels"] = [args.channel]
+            report["stop_chmask"] = 1 << (args.channel - 1)
+        elif args.mode == "stop_ramp_multi":
+            stop_result = lda.stop_ramps(_require(args.channels, "--channels"))
+            report["stopped_channels"] = stop_result["channels"]
+            report["stop_chmask"] = stop_result["chmask"]
+            report["message"] = "multi-channel ramps stopped"
 
     report["success"] = True
     return report
@@ -697,8 +779,11 @@ def main() -> None:
             "success": False,
             "message": str(exc),
             "settings": None,
+            "set_calls": None,
             "ramps": None,
             "start_groups": None,
+            "stopped_channels": None,
+            "stop_chmask": None,
             "values": None,
         }
         rc = 1

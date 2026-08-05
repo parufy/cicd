@@ -206,8 +206,11 @@ def _vatt_detail(result_file: Path) -> str:
         d = json.loads(result_file.read_text(encoding="utf-8-sig"))
         vatt = d.get("vatt_result") or {}
         settings = vatt.get("settings") or d.get("requested_settings") or {}
+        set_calls = vatt.get("set_calls")
         ramps = vatt.get("ramps") or d.get("requested_ramps") or []
         start_groups = vatt.get("start_groups") or []
+        stopped_channels = vatt.get("stopped_channels") or d.get("requested_stop_channels") or []
+        stop_chmask = vatt.get("stop_chmask")
         values = vatt.get("values") or {}
         mode = _h(d.get("mode", ""))
         exec_mode = _h(d.get("exec_mode", ""))
@@ -233,6 +236,7 @@ def _vatt_detail(result_file: Path) -> str:
           <div class="att-setting">
             <div class="att-setting-title">ATT設定値</div>
             <div class="att-values">{setting_chips}</div>
+            <div class="att-setting-info">設定API呼び出し回数: {set_calls if set_calls is not None else 'N/A'}</div>
           </div>"""
         else:
             setting_html = ""
@@ -260,6 +264,21 @@ def _vatt_detail(result_file: Path) -> str:
           </div>"""
         else:
             ramp_html = ""
+
+        if stopped_channels:
+            stop_chips = "".join(
+                f'<span class="ramp-stop-value">CH{int(channel)}</span>'
+                for channel in sorted(int(ch) for ch in stopped_channels)
+            )
+            mask_text = f"0x{int(stop_chmask):X}" if stop_chmask is not None else "N/A"
+            stop_html = f"""
+          <div class="ramp-stop">
+            <div class="ramp-stop-title">Ramp停止対象</div>
+            <div class="att-values">{stop_chips}</div>
+            <div class="ramp-stop-info">Channel mask: {mask_text}</div>
+          </div>"""
+        else:
+            stop_html = ""
 
         if values:
             value_chips = "".join(
@@ -300,6 +319,7 @@ def _vatt_detail(result_file: Path) -> str:
           </table>
           {setting_html}
           {ramp_html}
+          {stop_html}
           {readback_html}
           {err_html}
         </div>"""
@@ -409,11 +429,18 @@ _CSS = """
     .att-setting-value { display: inline-block; padding: 3px 8px; border-radius: 10px;
                          background: #dbeafe; color: #1e40af; font-weight: 600;
                          font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .att-setting-info { margin-top: 5px; font-size: 11px; color: #1e40af; }
     .ramp-config { margin-top: 8px; padding: 8px 10px; border-left: 3px solid #7c3aed;
                    background: #f5f3ff; }
     .ramp-title { margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #5b21b6; }
     .ramp-table { min-width: 650px; }
     .ramp-start-info { margin-top: 5px; font-size: 11px; color: #5b21b6; }
+    .ramp-stop { margin-top: 8px; padding: 8px 10px; border-left: 3px solid #dc2626;
+                 background: #fef2f2; }
+    .ramp-stop-title { margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #991b1b; }
+    .ramp-stop-value { display: inline-block; padding: 3px 8px; border-radius: 10px;
+                       background: #fee2e2; color: #991b1b; font-weight: 600; }
+    .ramp-stop-info { margin-top: 5px; font-size: 11px; color: #991b1b; }
     .att-readback { margin-top: 8px; padding: 8px 10px; border-left: 3px solid #f97316;
                     background: #fff7ed; }
     .att-title { margin-bottom: 6px; font-size: 11px; font-weight: 600; color: #7c2d12; }

@@ -56,6 +56,7 @@ def _build_remote_cmd(args: argparse.Namespace) -> list[str]:
     _append_optional(cmd, "--idle-ms", args.idle_ms)
     _append_optional(cmd, "--hold-ms", args.hold_ms)
     _append_optional(cmd, "--ramps-b64", args.ramps_b64)
+    _append_optional(cmd, "--settings-b64", args.settings_b64)
     if args.channels:
         cmd += ["--channels", *[str(ch) for ch in args.channels]]
     if args.test_mode:
@@ -95,6 +96,19 @@ def _append_jsonl_utf8_sig(path: Path, item: dict) -> None:
 
 def _requested_settings(args: argparse.Namespace) -> dict | None:
     """Record requested set values without reading them back from the device."""
+    if args.mode == "set_multi" and args.settings_b64:
+        try:
+            decoded = base64.urlsafe_b64decode(args.settings_b64.encode("ascii"))
+            specs = json.loads(decoded.decode("utf-8"))
+            return {
+                str(spec["channel"]): spec["attenuation_db"]
+                for spec in specs
+                if isinstance(spec, dict)
+                and "channel" in spec
+                and "attenuation_db" in spec
+            }
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError, TypeError):
+            return None
     if args.attenuation_db is None:
         return None
     if args.mode == "set" and args.channel is not None:
@@ -117,6 +131,12 @@ def _requested_ramps(args: argparse.Namespace) -> list[dict] | None:
         return None
 
 
+def _requested_stop_channels(args: argparse.Namespace) -> list[int] | None:
+    if args.mode == "stop_ramp_multi" and args.channels:
+        return list(args.channels)
+    return None
+
+
 def run_vatt_control(args: argparse.Namespace) -> bool:
     output_file = Path(args.output)
     history_file = output_file.with_name("vatt_history.jsonl")
@@ -134,6 +154,7 @@ def run_vatt_control(args: argparse.Namespace) -> bool:
         "stderr": [],
         "requested_settings": _requested_settings(args),
         "requested_ramps": _requested_ramps(args),
+        "requested_stop_channels": _requested_stop_channels(args),
         "vatt_result": None,
         "success": False,
     }
@@ -190,7 +211,10 @@ def run_vatt_control(args: argparse.Namespace) -> bool:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="VATT control over SSH")
     parser.add_argument("--mode", required=True,
-                        choices=["status", "set", "set_all", "ramp", "ramp_multi", "stop_ramp"])
+                        choices=[
+                            "status", "set", "set_all", "set_multi", "ramp", "ramp_multi",
+                            "stop_ramp", "stop_ramp_multi",
+                        ])
     parser.add_argument("--local-vatt-dir", required=True)
     parser.add_argument("--remote-dir", default=r"C:\cicd\vatt_cnt")
     parser.add_argument("--python-path", default="python")
@@ -208,6 +232,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--idle-ms", type=int, default=None)
     parser.add_argument("--hold-ms", type=int, default=None)
     parser.add_argument("--ramps-b64", default=None)
+    parser.add_argument("--settings-b64", default=None)
     parser.add_argument("--test-mode", action="store_true")
     parser.add_argument("--no-go", action="store_true")
     parser.add_argument("--bidirectional", action="store_true")

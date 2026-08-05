@@ -553,15 +553,35 @@ class ActionExecutor:
     def _action_vatt_control(self, step: ScenarioStep) -> StepResult:
         p = step.params
         mode = str(p.get("mode", "status")).lower()
-        if mode not in ("status", "set", "set_all", "ramp", "ramp_multi", "stop_ramp"):
+        if mode not in (
+            "status", "set", "set_all", "set_multi", "ramp", "ramp_multi",
+            "stop_ramp", "stop_ramp_multi",
+        ):
             return StepResult(
                 host=self._label, step_name=step.name, action="vatt_control",
                 success=False,
                 error=(
                     f"Invalid mode '{mode}' "
-                    "(valid: status / set / set_all / ramp / ramp_multi / stop_ramp)"
+                    "(valid: status / set / set_all / set_multi / ramp / ramp_multi / "
+                    "stop_ramp / stop_ramp_multi)"
                 ),
             )
+
+        if mode == "stop_ramp_multi" and not p.get("channels"):
+            return StepResult(
+                host=self._label, step_name=step.name, action="vatt_control",
+                success=False,
+                error="stop_ramp_multi requires a non-empty params.channels list",
+            )
+
+        if mode == "set_multi":
+            settings = p.get("settings")
+            if not isinstance(settings, list) or not settings:
+                return StepResult(
+                    host=self._label, step_name=step.name, action="vatt_control",
+                    success=False,
+                    error="set_multi requires a non-empty params.settings list",
+                )
 
         default_output = f"vatt_{mode}_{_safe_filename(step.name)}_{uuid4().hex[:8]}.json"
         output_file = self.output_dir / p.get("output_file", default_output)
@@ -600,6 +620,14 @@ class ActionExecutor:
             ramps_json = json.dumps(ramps, ensure_ascii=False, separators=(",", ":"))
             ramps_b64 = base64.urlsafe_b64encode(ramps_json.encode("utf-8")).decode("ascii")
             cmd += ["--ramps-b64", ramps_b64]
+        if mode == "set_multi":
+            settings_json = json.dumps(
+                p["settings"], ensure_ascii=False, separators=(",", ":")
+            )
+            settings_b64 = base64.urlsafe_b64encode(
+                settings_json.encode("utf-8")
+            ).decode("ascii")
+            cmd += ["--settings-b64", settings_b64]
 
         optional_args = [
             ("serial", "--serial"),
@@ -838,8 +866,14 @@ def _load_vatt_summary(result_file: Path) -> str | None:
         vatt_result = data.get("vatt_result") or {}
         message = vatt_result.get("message") or ""
         settings = vatt_result.get("settings") or data.get("requested_settings")
+        set_calls = vatt_result.get("set_calls")
         ramps = vatt_result.get("ramps") or data.get("requested_ramps")
         start_groups = vatt_result.get("start_groups") or []
+        stopped_channels = (
+            vatt_result.get("stopped_channels")
+            or data.get("requested_stop_channels")
+        )
+        stop_chmask = vatt_result.get("stop_chmask")
         values = vatt_result.get("values")
 
         parts = []
@@ -851,7 +885,8 @@ def _load_vatt_summary(result_file: Path) -> str | None:
             ):
                 channel_label = "ALL CHANNELS" if str(ch).lower() == "all" else f"CH{ch}"
                 setting_parts.append(f"{channel_label}={float(value):.2f} dB")
-            parts.append("ATT SETTING: " + " | ".join(setting_parts))
+            call_text = f"  set_calls={set_calls}" if set_calls is not None else ""
+            parts.append("ATT SETTING: " + " | ".join(setting_parts) + call_text)
         if ramps:
             ramp_parts = []
             for spec in sorted(ramps, key=lambda item: int(item["channel"])):
@@ -866,6 +901,12 @@ def _load_vatt_summary(result_file: Path) -> str | None:
                 "RAMP CONFIG: " + " | ".join(ramp_parts)
                 + f"  start_calls={start_call_count}"
             )
+        if stopped_channels:
+            stopped = " | ".join(
+                f"CH{channel}" for channel in sorted(int(ch) for ch in stopped_channels)
+            )
+            mask_text = f"0x{int(stop_chmask):X}" if stop_chmask is not None else "N/A"
+            parts.append(f"RAMP STOP: {stopped}  chmask={mask_text}")
         if values:
             value_parts = []
             for ch, value in sorted(values.items(), key=lambda item: int(item[0])):
@@ -879,7 +920,7 @@ def _load_vatt_summary(result_file: Path) -> str | None:
             metadata.append(f"deployed={deployed}")
         if rc is not None:
             metadata.append(f"returncode={rc}")
-        if not values and not settings and not ramps and message:
+        if not values and not settings and not ramps and not stopped_channels and message:
             metadata.append(f"message={message}")
         parts.append("  ".join(metadata))
 

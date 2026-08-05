@@ -36,6 +36,29 @@ scenarios:
 
 既存の `action` / `execution` / `params` を直接書く形式も引き続き利用できます。
 
+## チャンネル別ATT値の一括処理
+
+`mode: set_multi` では、1回のSSH接続・機器初期化内で、チャンネルごとに
+異なるATT値を連続設定できます。異なる値の設定はチャンネルごとのAPI呼び出しに
+なるため完全な同時設定ではありませんが、複数Actionに分けるより高速です。
+
+```yaml
+scenarios:
+  - name: CH1-4 ATT設定
+    action: vatt_control
+    params:
+      mode: set_multi
+      settings:
+        - channel: 1
+          attenuation_db: 10.0
+        - channel: 2
+          attenuation_db: 20.0
+        - channel: 3
+          attenuation_db: 30.0
+        - channel: 4
+          attenuation_db: 40.0
+```
+
 ## 複数チャンネルRampの同時開始
 
 `mode: ramp_multi` では、チャンネルごとに異なるRamp設定を指定できます。
@@ -66,6 +89,18 @@ scenarios:
 同じ方向・`repeat`・`bidirectional` のチャンネルは1回のAPI呼び出しで開始されます。
 これらのモードが異なるチャンネルは、モード別にまとめて開始APIを連続呼び出しします。
 同一ATT機器に対する複数のRampステップを `execution: parallel` で実行しないでください。
+
+複数チャンネルのRampを一括停止する場合は、`mode: stop_ramp_multi` と
+停止対象の `channels` を指定します。指定していないチャンネルは停止しません。
+
+```yaml
+scenarios:
+  - name: CH1・CH3 Ramp停止
+    action: vatt_control
+    params:
+      mode: stop_ramp_multi
+      channels: [1, 3]
+```
 
 ## repeat の使い方
 
