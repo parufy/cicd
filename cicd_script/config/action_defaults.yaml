@@ -46,3 +46,14 @@ defaults:
     serial:
     test_mode: false
     timeout: 600
+
+  tcpdump:
+    host: tcpdump_pc
+    capture_id: test_capture
+    interface: any
+    filter: ""
+    snaplen: 0
+    sudo: true
+    download: true
+    stop_timeout: 10
+    timeout: 60

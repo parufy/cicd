@@ -131,3 +131,60 @@ scenarios:
 - `{repeat}` または `{repeat_index}`: 現在の繰り返し番号。1 始まり。
 - `{repeat_count}`: 繰り返し総数。
 - `{step}`: repeat ブロック内の step 番号。1 始まり。
+
+## 多段SSH先でのtcpdump取得
+
+tcpdump取得PCのホスト定義に、踏み台を手前から順に `jumps` へ指定します。
+`jumps` が1件なら「踏み台 → 取得PC」の2段SSH、2件なら3段SSHです。
+
+```yaml
+hosts:
+  - name: tcpdump_pc
+    address: 192.0.2.30
+    user: capture-user
+    password: "${TCPDUMP_PC_PASSWORD}"
+    jumps:
+      - address: 192.0.2.10
+        user: jump1-user
+        password: "${JUMP1_PASSWORD}"
+      - address: 192.0.2.20
+        user: jump2-user
+        password: "${JUMP2_PASSWORD}"
+```
+
+開始と停止では同じ `capture_id` を指定してください。開始はリモート上でバックグラウンド
+実行され、停止時にSIGINTでpcapを確定して、デフォルトでは成果物ディレクトリへ回収します。
+
+```yaml
+scenarios:
+  - name: tcpdump開始
+    action: tcpdump
+    params:
+      host: tcpdump_pc
+      mode: start
+      capture_id: ue_test_01
+      interface: eth0
+      filter: "host 198.51.100.25 and port 443"
+
+  # この間に試験ステップを実行
+
+  - name: tcpdump停止・回収
+    action: tcpdump
+    params:
+      host: tcpdump_pc
+      mode: stop
+      capture_id: ue_test_01
+      output_file: ue_test_01.pcap
+```
+
+通常はリモートユーザーがパスワードなしで `sudo -n tcpdump`、`kill`、`chmod` を
+実行できる必要があります。rootユーザーまたはcapture capabilityを付与したtcpdumpを
+使う場合は `sudo: false` を指定できます。主なパラメータは次のとおりです。
+
+- `remote_file`: リモートpcapパス（既定 `/tmp/tcpdump_<capture_id>.pcap`）
+- `pid_file`: PIDファイル（既定 `/tmp/tcpdump_<capture_id>.pid`）
+- `download`: 停止時にpcapを回収するか（既定 `true`）
+- `packet_count`: 指定パケット数で自動終了（`0` は停止操作まで継続）。自動終了後も
+  停止アクションを実行するとpcapを回収できます。
+- `snaplen`: tcpdumpのsnaplen（`0` はtcpdump側の既定動作）
+- `tcpdump_path`: リモートtcpdumpコマンドのパス

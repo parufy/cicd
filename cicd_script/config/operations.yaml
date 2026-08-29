@@ -9,6 +9,16 @@ operations:
     params:
       duration: 10
 
+  tcpdump.start:
+    action: tcpdump
+    params:
+      mode: start
+
+  tcpdump.stop:
+    action: tcpdump
+    params:
+      mode: stop
+
   adb.status:
     action: adb_control
     params:

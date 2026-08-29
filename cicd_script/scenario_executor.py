@@ -50,7 +50,8 @@ def _enable_debug_logging() -> None:
     """全ロガーのレベルを DEBUG に切り替える"""
     logging.getLogger().setLevel(logging.DEBUG)
     for name in ("scenario_executor", "executor", "ssh_client",
-                 "ping_test", "iperf_test", "logcollect", "report_generator"):
+                 "ping_test", "iperf_test", "logcollect", "tcpdump_control",
+                 "report_generator"):
         logging.getLogger(name).setLevel(logging.DEBUG)
     logger.debug("デバッグモード有効")
 
@@ -88,6 +89,7 @@ class HostConfig:
     user: str = "root"
     password: str = ""
     port: int = 22
+    jumps: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -124,7 +126,10 @@ class StepResult:
 class ScenarioParser:
     """YAMLシナリオファイルを解析してPipelineConfigに変換する"""
 
-    VALID_ACTIONS    = {"wait", "ping", "iperf", "logcollect", "adb_control", "vatt_control"}
+    VALID_ACTIONS    = {
+        "wait", "ping", "iperf", "logcollect", "adb_control", "vatt_control",
+        "tcpdump",
+    }
     VALID_EXECUTIONS = {"sequential", "parallel"}
 
     def parse(self, yaml_path: str) -> PipelineConfig:
@@ -249,12 +254,30 @@ class ScenarioParser:
         for h in raw_hosts:
             raw_pw   = str(h.get("password", ""))
             password = _resolve_env(raw_pw)
+            jumps = []
+            for index, jump in enumerate(h.get("jumps", []) or [], 1):
+                if not isinstance(jump, dict):
+                    raise ValueError(
+                        f"ホスト '{h.get('name')}' のjumps[{index}]はマップ形式で指定してください"
+                    )
+                address = jump.get("address", jump.get("host"))
+                if not address:
+                    raise ValueError(
+                        f"ホスト '{h.get('name')}' のjumps[{index}]にaddressがありません"
+                    )
+                jumps.append({
+                    "host": str(address),
+                    "user": str(jump.get("user", "root")),
+                    "password": _resolve_env(str(jump.get("password", ""))),
+                    "port": int(jump.get("port", 22)),
+                })
             cfg = HostConfig(
                 name=h["name"],
                 address=h["address"],
                 user=h.get("user", "root"),
                 password=password,
                 port=int(h.get("port", 22)),
+                jumps=jumps,
             )
             hosts[cfg.name] = cfg
         return hosts
@@ -398,6 +421,7 @@ class ActionExecutor:
             "logcollect":  self._action_logcollect,
             "adb_control": self._action_adb_control,
             "vatt_control": self._action_vatt_control,
+            "tcpdump":     self._action_tcpdump,
         }
 
         handler = handlers.get(step.action)
@@ -430,6 +454,17 @@ class ActionExecutor:
         # デバッグモード時は子スクリプトにも --debug を伝播
         if logging.getLogger().level <= logging.DEBUG:
             args.append("--debug")
+        return args
+
+    def _tcpdump_ssh_args(self) -> list[str]:
+        """tcpdump用SSH引数。最終ホストに加え、踏み台の接続情報も渡す。"""
+        args = self._ssh_args()
+        if self.host and self.host.jumps:
+            jumps_json = json.dumps(
+                self.host.jumps, ensure_ascii=False, separators=(",", ":")
+            )
+            encoded = base64.urlsafe_b64encode(jumps_json.encode("utf-8")).decode("ascii")
+            args += ["--ssh-jumps-b64", encoded]
         return args
 
     # ── wait ────────────────────────────────────────────────────
@@ -651,6 +686,59 @@ class ActionExecutor:
         self._log_vatt_console_summary(output_file)
         return result
 
+    # ── tcpdump ─────────────────────────────────────────────────
+    def _action_tcpdump(self, step: ScenarioStep) -> StepResult:
+        if self.host is None:
+            return StepResult(
+                host=self._label, step_name=step.name, action="tcpdump",
+                success=False, error="tcpdump actionにはparams.hostの指定が必要です",
+            )
+
+        p = step.params
+        mode = str(p.get("mode", "start")).lower()
+        if mode not in ("start", "stop"):
+            return StepResult(
+                host=self._label, step_name=step.name, action="tcpdump",
+                success=False, error=f"不正なmode '{mode}' (有効値: start / stop)",
+            )
+
+        capture_id = str(p.get("capture_id", "capture"))
+        default_result = f"tcpdump_{capture_id}_{mode}.json"
+        result_file = self.output_dir / p.get("result_file", default_result)
+        cmd = [
+            sys.executable,
+            str(self.SCRIPTS_DIR / "tcpdump_control.py"),
+            "--mode", mode,
+            "--capture-id", capture_id,
+            "--interface", str(p.get("interface", "any")),
+            "--capture-filter", str(p.get("filter", "")),
+            "--snaplen", str(p.get("snaplen", 0)),
+            "--packet-count", str(p.get("packet_count", 0)),
+            "--tcpdump-path", str(p.get("tcpdump_path", "tcpdump")),
+            "--stop-timeout", str(p.get("stop_timeout", 10)),
+            "--timeout", str(p.get("timeout", 60)),
+            "--output", str(result_file),
+            *self._tcpdump_ssh_args(),
+        ]
+        if not p.get("sudo", True):
+            cmd.append("--no-sudo")
+        for key, flag in (
+            ("remote_file", "--remote-file"),
+            ("pid_file", "--pid-file"),
+            ("log_file", "--log-file"),
+        ):
+            if p.get(key):
+                cmd += [flag, str(p[key])]
+
+        capture_file = None
+        if mode == "stop" and p.get("download", True):
+            default_pcap = f"tcpdump_{capture_id}.pcap"
+            capture_file = self.output_dir / p.get("output_file", default_pcap)
+            cmd += ["--local-file", str(capture_file)]
+
+        result = self._run_script(step, cmd, result_file=capture_file or result_file)
+        return result
+
     def _log_vatt_console_summary(self, result_file: Path) -> None:
         summary = _load_vatt_summary(result_file)
         if summary:
@@ -659,7 +747,7 @@ class ActionExecutor:
     # ── 共通スクリプト実行ヘルパー ──────────────────────────────
     def _run_script(self, step: ScenarioStep, cmd: list[str], result_file: "Path | None" = None) -> StepResult:
         masked = [
-            "***" if cmd[i - 1] == "--ssh-password" else v
+            "***" if cmd[i - 1] in ("--ssh-password", "--ssh-jumps-b64") else v
             for i, v in enumerate(cmd)
         ]
         self.log.debug(f"  コマンド: {' '.join(masked)}")

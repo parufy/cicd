@@ -1,0 +1,115 @@
+# 3UE: 各UEでpingを流しながらiperfを同時実行するシナリオ
+#
+# 実行前に以下を実環境に合わせて変更してください。
+#   UE1_SERIAL: UE1のADBシリアル番号
+#   UE2_SERIAL: UE2のADBシリアル番号
+#   UE3_SERIAL: UE3のADBシリアル番号
+#
+# 6ステップを連続してexecution: parallelにしているため、
+# UE1～UE3のpingとiperfが同じ並列グループとして投入されます。
+# pingは20回・1秒間隔、iperfは10秒です。
+
+config:
+  hosts: ../config/hosts.yaml
+  defaults: ../config/action_defaults.yaml
+  operations: ../config/operations.yaml
+
+scenarios:
+  - name: "UE1 ping（iperf実行中も継続）"
+    action: ping
+    execution: parallel
+    params:
+      host: host1
+      target: 127.0.0.1
+      count: 20
+      interval: 1.0
+      timeout: 5
+      adb_serial: "UE1_SERIAL"
+      adb_path: adb
+      output_file: "ue1_ping_result.json"
+
+  - name: "UE1 UDP iperf 10秒"
+    action: iperf
+    execution: parallel
+    params:
+      host: host1
+      server: 127.0.0.1
+      port: 5201
+      protocol: udp
+      duration: 10
+      parallel: 1
+      direction: ul
+      bandwidth: 1M
+      adb_serial: "UE1_SERIAL"
+      adb_path: adb
+      adb_iperf_path: /data/local/tmp/iperf3
+      server_adb_serial: "UE1_SERIAL"
+      server_adb_iperf_path: /data/local/tmp/iperf3
+      server_startup_wait: 2
+      output_file: "ue1_iperf_result.json"
+
+  - name: "UE2 ping（iperf実行中も継続）"
+    action: ping
+    execution: parallel
+    params:
+      host: host1
+      target: 127.0.0.1
+      count: 20
+      interval: 1.0
+      timeout: 5
+      adb_serial: "UE2_SERIAL"
+      adb_path: adb
+      output_file: "ue2_ping_result.json"
+
+  - name: "UE2 UDP iperf 10秒"
+    action: iperf
+    execution: parallel
+    params:
+      host: host1
+      server: 127.0.0.1
+      port: 5201
+      protocol: udp
+      duration: 10
+      parallel: 1
+      direction: ul
+      bandwidth: 1M
+      adb_serial: "UE2_SERIAL"
+      adb_path: adb
+      adb_iperf_path: /data/local/tmp/iperf3
+      server_adb_serial: "UE2_SERIAL"
+      server_adb_iperf_path: /data/local/tmp/iperf3
+      server_startup_wait: 2
+      output_file: "ue2_iperf_result.json"
+
+  - name: "UE3 ping（iperf実行中も継続）"
+    action: ping
+    execution: parallel
+    params:
+      host: host1
+      target: 127.0.0.1
+      count: 20
+      interval: 1.0
+      timeout: 5
+      adb_serial: "UE3_SERIAL"
+      adb_path: adb
+      output_file: "ue3_ping_result.json"
+
+  - name: "UE3 UDP iperf 10秒"
+    action: iperf
+    execution: parallel
+    params:
+      host: host1
+      server: 127.0.0.1
+      port: 5201
+      protocol: udp
+      duration: 10
+      parallel: 1
+      direction: ul
+      bandwidth: 1M
+      adb_serial: "UE3_SERIAL"
+      adb_path: adb
+      adb_iperf_path: /data/local/tmp/iperf3
+      server_adb_serial: "UE3_SERIAL"
+      server_adb_iperf_path: /data/local/tmp/iperf3
+      server_startup_wait: 2
+      output_file: "ue3_iperf_result.json"

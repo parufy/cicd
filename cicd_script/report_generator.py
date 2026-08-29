@@ -410,6 +410,7 @@ _CSS = """
     .action-iperf      { background: #dcfce7; color: #166534; }
     .action-adb_control { background: #fce7f3; color: #9d174d; }
     .action-vatt_control { background: #e0f2fe; color: #075985; }
+    .action-tcpdump    { background: #fee2e2; color: #991b1b; }
     .action-logcollect { background: #fef9c3; color: #854d0e; }
     .action-wait       { background: #f3e8ff; color: #6b21a8; }
     .exec-sequential   { background: #e2e8f0; color: #475569; }

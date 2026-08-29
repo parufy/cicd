@@ -9,6 +9,7 @@ import logging
 import os
 import stat
 from pathlib import Path
+from typing import Any
 
 import paramiko
 
@@ -25,33 +26,86 @@ class SSHClient:
         password: str,
         port: int = 22,
         connect_timeout: int = 10,
+        jump_hosts: list[dict[str, Any]] | None = None,
     ):
         self.host = host
         self.user = user
         self.password = password
         self.port = port
         self.connect_timeout = connect_timeout
+        self.jump_hosts = jump_hosts or []
         self._client: paramiko.SSHClient | None = None
+        self._clients: list[paramiko.SSHClient] = []
+        self._channels: list[Any] = []
 
     # ── 接続 / 切断 ────────────────────────────────────────────
     def connect(self) -> None:
-        self._client = paramiko.SSHClient()
-        self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self._client.connect(
-            hostname=self.host,
-            port=self.port,
-            username=self.user,
-            password=self.password,
-            timeout=self.connect_timeout,
-            allow_agent=False,
-            look_for_keys=False,  # 鍵認証を無効化（パスワード認証のみ）
-        )
-        logger.debug(f"SSH接続成功: {self.user}@{self.host}:{self.port}")
+        route = [
+            {
+                "host": str(h["host"]),
+                "user": str(h.get("user", "root")),
+                "password": str(h.get("password", "")),
+                "port": int(h.get("port", 22)),
+            }
+            for h in self.jump_hosts
+        ]
+        route.append({
+            "host": self.host,
+            "user": self.user,
+            "password": self.password,
+            "port": self.port,
+        })
+
+        sock = None
+        try:
+            for index, endpoint in enumerate(route):
+                client = paramiko.SSHClient()
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                client.connect(
+                    hostname=endpoint["host"],
+                    port=endpoint["port"],
+                    username=endpoint["user"],
+                    password=endpoint["password"],
+                    timeout=self.connect_timeout,
+                    allow_agent=False,
+                    look_for_keys=False,  # 鍵認証を無効化（パスワード認証のみ）
+                    sock=sock,
+                )
+                self._clients.append(client)
+                logger.debug(
+                    "SSH接続成功 (%d/%d): %s@%s:%s",
+                    index + 1,
+                    len(route),
+                    endpoint["user"],
+                    endpoint["host"],
+                    endpoint["port"],
+                )
+
+                if index < len(route) - 1:
+                    next_endpoint = route[index + 1]
+                    transport = client.get_transport()
+                    if transport is None:
+                        raise RuntimeError("SSH transportを取得できません")
+                    sock = transport.open_channel(
+                        "direct-tcpip",
+                        (next_endpoint["host"], next_endpoint["port"]),
+                        ("127.0.0.1", 0),
+                    )
+                    self._channels.append(sock)
+
+            self._client = self._clients[-1]
+        except Exception:
+            self.close()
+            raise
 
     def close(self) -> None:
-        if self._client:
-            self._client.close()
-            self._client = None
+        for client in reversed(self._clients):
+            client.close()
+        for channel in reversed(self._channels):
+            channel.close()
+        self._client = None
+        self._clients = []
+        self._channels = []
 
     def __enter__(self):
         self.connect()
@@ -176,6 +230,18 @@ class SSHClient:
                 sftp.mkdir(current)
 
 
-def make_client(host: str, user: str, password: str, port: int = 22) -> SSHClient:
+def make_client(
+    host: str,
+    user: str,
+    password: str,
+    port: int = 22,
+    jump_hosts: list[dict[str, Any]] | None = None,
+) -> SSHClient:
     """SSHClientインスタンスを生成するファクトリ関数"""
-    return SSHClient(host=host, user=user, password=password, port=port)
+    return SSHClient(
+        host=host,
+        user=user,
+        password=password,
+        port=port,
+        jump_hosts=jump_hosts,
+    )

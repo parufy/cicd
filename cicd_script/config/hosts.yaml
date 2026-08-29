@@ -13,3 +13,21 @@ hosts:
   #   user: att-user
   #   password: "${ATT_PC_PASSWORD}"
   #   port: 22
+
+  # tcpdump取得PCへ2段の踏み台を経由して接続する例です。
+  # jumpsは手前から順に並べます。踏み台1台ならSSHは計2段、
+  # 踏み台2台なら計3段になります。
+  # - name: tcpdump_pc
+  #   address: 192.0.2.30
+  #   user: capture-user
+  #   password: "${TCPDUMP_PC_PASSWORD}"
+  #   port: 22
+  #   jumps:
+  #     - address: 192.0.2.10
+  #       user: jump1-user
+  #       password: "${JUMP1_PASSWORD}"
+  #       port: 22
+  #     - address: 192.0.2.20
+  #       user: jump2-user
+  #       password: "${JUMP2_PASSWORD}"
+  #       port: 22
