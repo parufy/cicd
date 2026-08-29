@@ -1,148 +1,124 @@
-import config
+import logging
+import shlex
 import sys
-import subprocess
-import paramiko
+from pathlib import Path
 
-def main():
-    Get_4GDU_LOG()
-    Get_4GCU_LOG()
-
-def Get_4GDU_LOG():
-    ##### DU Environment parameter ####
-    DU_HOST                 = config.ENB_DU_PARAM["host"]
-    DU_USER                 = config.ENB_DU_PARAM["user"]
-    DU_PW                   = config.ENB_DU_PARAM["password"]
-    DU_SCRIPT_DIR           = config.ENB_DU_PARAM["script_dir"]
-    DU_SCRIPT_INSTALL_PATH  = config.ENB_DU_PARAM["script_install_path"] 
-    DU_SCRIPT_PATH          = DU_SCRIPT_INSTALL_PATH + "/" +DU_SCRIPT_DIR
-    DU_NAMESPACE            = config.ENB_DU_PARAM["namespace"]
-    DU_LOG_PATH             = config.ENB_DU_PARAM["log_path"]
-    EXPORT_KUBECONF         = config.ENB_DU_PARAM["export_kubeconf"]
-
-    ## Copy Script to DU Server 
-    print("Copy 4GDU Getlog Script to 4GDU Controller(" + DU_HOST + ")")
-    try:
-        CMD = "sshpass -p " + "'" + DU_PW + "' " + "scp -r " + "/cicd/Getlog/" + DU_SCRIPT_DIR + " " + DU_USER + "@" + DU_HOST + ":" + DU_SCRIPT_INSTALL_PATH
-        subprocess.run([CMD], shell=True, check=True)
-    except subprocess.CalledProcessError as e:
-        sys.exit("Failed DUScript-copy!")
-    
-    ## Perform 4GDU_Getlog ##
-    print("##### Perform 4GDU_Getlog #####")
-    client_du = paramiko.SSHClient()
-    client_du.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    
-    try:
-        client_du.connect(hostname=DU_HOST, username=DU_USER, password=DU_PW)
-        print("ssh connect" + DU_HOST)
-    
-        # Get DU PODNAME
-        GET_DUPODNAME_CMD="/bin/bash ./get_dupod_name.sh " + DU_NAMESPACE
-        stdin, stdout, stderr = client_du.exec_command(EXPORT_KUBECONF + "; cd "+ DU_SCRIPT_PATH +"; " + GET_DUPODNAME_CMD)
-        for line in stdout:
-            DU_PODNAME = line.strip()
-    
-        # Perform DU-GETLOG
-        GET_DULOG_CMD="python3 4gdu_getlog.py " + DU_PODNAME 
-        stdin, stdout, stderr = client_du.exec_command(EXPORT_KUBECONF + "; cd "+ DU_SCRIPT_PATH +"; " + GET_DULOG_CMD)
-        for line in stdout:
-            print(line.strip())
-#        for line in stderr:
-#            print(line.strip())
-  
-    except paramiko.AuthenticationException:
-        print("Failed Authntication. Please check user/pw")
-    except paramiko.SSHException as e:
-        print("ssh connection error:{e}")
-    finally:
-        client_du.close()
-  
-    # Copy DULog from DU Server ####
-    try:
-        CMD = "sshpass -p " + "'" + DU_PW + "' " + "scp " + DU_USER + "@" + DU_HOST + ":" + DU_LOG_PATH + "/" + DU_PODNAME + ".tar.gz ~/LOG/"
-        subprocess.run([CMD], shell=True, check=True)
-    except subprocess.CalledProcessError as e:
-        sys.exit("Failed DULog-copy!")
-    
-    # Delete DUlog from DU Server 
-    try:
-        CMD = "sshpass -p " + "'" + DU_PW + "' " + "ssh " + DU_USER + "@" + DU_HOST + " " + "rm -rf " + DU_LOG_PATH + "/" + DU_PODNAME + ".tar.gz"
-        subprocess.run([CMD], shell=True, check=True)
-    except subprocess.CalledProcessError as e:
-        sys.exit("Failed delete logfile from DU Server!")
-  
-    # Show Log file name
-    print("***************************************")
-    print("**   Output 4GDU Getlog File name    **")
-    print("***************************************")
-    print("4GDU LOG PATH: ~/LOG/" + DU_PODNAME + ".tar.gz")
+import config
 
 
-def Get_4GCU_LOG():
-    ###### CU Environment parameter ####
-    CU_HOST                 = config.ENB_CU_PARAM["host"]
-    CU_USER                 = config.ENB_CU_PARAM["user"]
-    CU_PW                   = config.ENB_CU_PARAM["password"] 
-    CU_SCRIPT_DIR           = config.ENB_CU_PARAM["script_dir"] 
-    CU_SCRIPT_INSTALL_PATH  = config.ENB_CU_PARAM["script_install_path"]
-    CU_SCRIPT_PATH          = CU_SCRIPT_INSTALL_PATH + "/" + CU_SCRIPT_DIR
-    CU_LOG_PATH             = CU_SCRIPT_PATH 
+SCRIPT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPT_ROOT / "scripts"))
 
-    # Script to CU Server 
-    print("Copy 4GCU Getlog Script to 4GCU Controller(" + CU_HOST + ")")
-    try: 
-        CMD = "sshpass -p " + "'" + CU_PW + "' " + "scp -r " + "/cicd/Getlog/" + CU_SCRIPT_DIR + " " + CU_USER + "@" + CU_HOST + ":" + CU_SCRIPT_INSTALL_PATH
-        subprocess.run([CMD], shell=True, check=True)
-    except subprocess.CalledProcessError as e:
-        sys.exit("Failed CUScript-copy!")
-    
-    # Perform 4GCU_Getlog
-    print("##### Perform 4GCU_Getlog #####")
-    client_cu = paramiko.SSHClient()
-    client_cu.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    
-    try:
-        client_cu.connect(hostname=CU_HOST, username=CU_USER, password=CU_PW)
-        print("ssh connect " + CU_HOST)
-    
-        # Perform CU-GETLOG
-        GET_CULOG_CMD="/bin/bash ./4gcu_getlog.sh " + CU_USER+ " " + CU_PW 
-        stdin, stdout, stderr = client_cu.exec_command("cd "+ CU_SCRIPT_PATH +"; " + GET_CULOG_CMD)
-        for line in stdout:
-            CU_LOGNAME = line.strip()
-            print(CU_LOGNAME)
-#        for line in stderr:
-#            print(line.strip())
-    except paramiko.AuthenticationException:
-        print("Filad Authntication. Please check user/pw")
-    except paramiko.SSHException as e:
-        print("ssh connection error:{e}")
-    finally:
-        client_cu.close()
-    
-    # Copy CULog from CU Server ####
-    try:
-        CMD = "sshpass -p " + "'" + CU_PW + "' " + "scp " + CU_USER + "@" + CU_HOST + ":" + CU_LOG_PATH + "/" + CU_LOGNAME + ".tar.gz ~/LOG/"
-        subprocess.run([CMD], shell=True, check=True)
-    except subprocess.CalledProcessError as e:
-        sys.exit("Failed CULog-copy!")
-    
-    # Delete CUlog from CU Server
-    try:
-        CMD = "sshpass -p " + "'" + CU_PW + "' " + "ssh " + CU_USER + "@" + CU_HOST + " " + "rm -rf " + CU_LOG_PATH + "/" + CU_LOGNAME + ".tar.gz"
-        subprocess.run([CMD], shell=True, check=True)
-    except subprocess.CalledProcessError as e:
-        sys.exit("Failed delete logfile from CU Server!")
-  
-    # Show Log file name
-    print("***************************************")
-    print("**   Output 4GCU Getlog File name    **")
-    print("***************************************")
-    print("4GCU LOG PATH: ~/LOG/" + CU_LOGNAME + ".tar.gz")
+from ssh_client import make_client  # noqa: E402
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] logcollect - %(message)s",
+)
+logger = logging.getLogger("logcollect")
+
+
+def _quote(value: object) -> str:
+    return shlex.quote(str(value))
+
+
+def _run_checked(ssh, command: str, label: str) -> str:
+    rc, stdout, stderr = ssh.run(command)
+    if rc != 0:
+        detail = stderr.strip() or stdout.strip() or f"return code {rc}"
+        raise RuntimeError(f"{label} failed: {detail}")
+    return stdout
+
+
+def _connect(params: dict):
+    return make_client(
+        params["host"],
+        params["user"],
+        params["password"],
+        int(params.get("port", 22)),
+        jump_hosts=params.get("jumps", getattr(config, "SSH_JUMPS", [])),
+    )
+
+
+def _last_nonempty_line(output: str, label: str) -> str:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if not lines:
+        raise RuntimeError(f"{label} returned no output")
+    return lines[-1]
+
+
+def get_4gdu_log() -> Path:
+    params = config.ENB_DU_PARAM
+    local_script_dir = Path(__file__).parent / params["script_dir"]
+    remote_script_dir = (
+        params["script_install_path"].rstrip("/") + "/" + params["script_dir"]
+    )
+    output_dir = Path.home() / "LOG"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Copy 4GDU log script to %s", params["host"])
+    with _connect(params) as ssh:
+        ssh.put_directory(local_script_dir, remote_script_dir)
+        pod_output = _run_checked(
+            ssh,
+            f"{params['export_kubeconf']}; cd {_quote(remote_script_dir)}; "
+            f"/bin/bash ./get_dupod_name.sh {_quote(params['namespace'])}",
+            "Get DU pod name",
+        )
+        pod_name = _last_nonempty_line(pod_output, "Get DU pod name")
+        _run_checked(
+            ssh,
+            f"{params['export_kubeconf']}; cd {_quote(remote_script_dir)}; "
+            f"python3 4gdu_getlog.py {_quote(pod_name)}",
+            "Collect DU log",
+        )
+        remote_log = params["log_path"].rstrip("/") + f"/{pod_name}.tar.gz"
+        local_log = output_dir / f"{pod_name}.tar.gz"
+        ssh.get_file(remote_log, local_log)
+        _run_checked(ssh, f"rm -f -- {_quote(remote_log)}", "Delete remote DU log")
+
+    logger.info("4GDU log: %s", local_log)
+    return local_log
+
+
+def get_4gcu_log() -> Path:
+    params = config.ENB_CU_PARAM
+    local_script_dir = Path(__file__).parent / params["script_dir"]
+    remote_script_dir = (
+        params["script_install_path"].rstrip("/") + "/" + params["script_dir"]
+    )
+    output_dir = Path.home() / "LOG"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Copy 4GCU log script to %s", params["host"])
+    with _connect(params) as ssh:
+        ssh.put_directory(local_script_dir, remote_script_dir)
+        log_output = _run_checked(
+            ssh,
+            f"cd {_quote(remote_script_dir)}; /bin/bash ./4gcu_getlog.sh "
+            f"{_quote(params['user'])} {_quote(params['password'])}",
+            "Collect CU log",
+        )
+        log_name = _last_nonempty_line(log_output, "Collect CU log")
+        remote_log = remote_script_dir + f"/{log_name}.tar.gz"
+        local_log = output_dir / f"{log_name}.tar.gz"
+        ssh.get_file(remote_log, local_log)
+        _run_checked(ssh, f"rm -f -- {_quote(remote_log)}", "Delete remote CU log")
+
+    logger.info("4GCU log: %s", local_log)
+    return local_log
+
+
+# Keep the original public names for callers outside this repository.
+Get_4GDU_LOG = get_4gdu_log
+Get_4GCU_LOG = get_4gcu_log
+
+
+def main() -> None:
+    get_4gdu_log()
+    get_4gcu_log()
 
 
 if __name__ == "__main__":
     main()
-
-

@@ -2,7 +2,6 @@
 """Start and stop tcpdump on a host reached through zero or more SSH jumps."""
 
 import argparse
-import base64
 import json
 import logging
 import posixpath
@@ -11,7 +10,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from ssh_client import make_client
+from ssh_client import decode_jump_hosts, make_client
 
 
 logger = logging.getLogger("tcpdump_control")
@@ -20,21 +19,6 @@ CAPTURE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 def _quote(value: object) -> str:
     return shlex.quote(str(value))
-
-
-def decode_jump_hosts(encoded: str | None) -> list[dict]:
-    if not encoded:
-        return []
-    try:
-        value = json.loads(base64.urlsafe_b64decode(encoded.encode("ascii")))
-    except Exception as exc:
-        raise ValueError("SSH踏み台情報をデコードできません") from exc
-    if not isinstance(value, list):
-        raise ValueError("SSH踏み台情報はリストで指定してください")
-    for index, host in enumerate(value, 1):
-        if not isinstance(host, dict) or not host.get("host"):
-            raise ValueError(f"SSH踏み台{index}のhostが未指定です")
-    return value
 
 
 def build_start_command(args: argparse.Namespace) -> str:

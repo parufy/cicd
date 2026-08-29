@@ -12,7 +12,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ssh_client import make_client
+from ssh_client import decode_jump_hosts, make_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -166,6 +166,7 @@ def run_vatt_control(args: argparse.Namespace) -> bool:
                 args.ssh_user,
                 args.ssh_password,
                 args.ssh_port,
+                jump_hosts=decode_jump_hosts(getattr(args, "ssh_jumps_b64", "")),
             ) as ssh:
                 if args.deploy:
                     logger.info("Deploying vatt_cnt to %s", args.remote_dir)
@@ -244,6 +245,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ssh-user", default="root")
     parser.add_argument("--ssh-password", default="")
     parser.add_argument("--ssh-port", type=int, default=22)
+    parser.add_argument("--ssh-jumps-b64", default="")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 

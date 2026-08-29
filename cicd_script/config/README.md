@@ -132,17 +132,19 @@ scenarios:
 - `{repeat_count}`: 繰り返し総数。
 - `{step}`: repeat ブロック内の step 番号。1 始まり。
 
-## 多段SSH先でのtcpdump取得
+## SSH踏み台の切り替え
 
-tcpdump取得PCのホスト定義に、踏み台を手前から順に `jumps` へ指定します。
-`jumps` が1件なら「踏み台 → 取得PC」の2段SSH、2件なら3段SSHです。
+踏み台が必要なホストでは、ホスト定義の `jumps` に踏み台を手前から順に指定します。
+`jumps` が1件なら「踏み台 → 対象ホスト」の2段SSH、2件なら3段SSHです。
+`jumps` を省略するか空リスト (`jumps: []`) にすると、GitLab Runnerから対象ホストへ
+従来どおり直接SSH接続します。この設定はping、iperf、ADB、VATT、tcpdumpに共通です。
 
 ```yaml
 hosts:
-  - name: tcpdump_pc
+  - name: target_server
     address: 192.0.2.30
-    user: capture-user
-    password: "${TCPDUMP_PC_PASSWORD}"
+    user: target-user
+    password: "${TARGET_SERVER_PASSWORD}"
     jumps:
       - address: 192.0.2.10
         user: jump1-user
@@ -151,6 +153,22 @@ hosts:
         user: jump2-user
         password: "${JUMP2_PASSWORD}"
 ```
+
+踏み台を使わない場合は、同じ対象ホストを次のように定義します。
+
+```yaml
+hosts:
+  - name: target_server
+    address: 192.0.2.30
+    user: target-user
+    password: "${TARGET_SERVER_PASSWORD}"
+    port: 22
+```
+
+踏み台を経由した接続では、GitLab Runner側から最初の踏み台へ、各踏み台から次の
+踏み台または対象ホストへTCP/22で到達できる必要があります。
+
+## tcpdump取得
 
 開始と停止では同じ `capture_id` を指定してください。開始はリモート上でバックグラウンド
 実行され、停止時にSIGINTでpcapを確定して、デフォルトでは成果物ディレクトリへ回収します。

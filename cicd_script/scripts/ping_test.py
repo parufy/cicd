@@ -20,7 +20,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ssh_client import make_client
+from ssh_client import decode_jump_hosts, make_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -113,6 +113,7 @@ def run_ping(
     # ADB 引数
     adb_serial: str | None,
     adb_path: str,
+    ssh_jump_hosts: list[dict] | None = None,
 ) -> bool:
     ping_cmd    = _build_ping_cmd(target, count, interval, timeout)
     run_timeout = int(count * interval + timeout + 30)
@@ -142,7 +143,10 @@ def run_ping(
 
         if use_ssh:
             # ── SSH 接続（ADB有無で分岐） ─────────────────────────
-            with make_client(ssh_host, ssh_user, ssh_password, ssh_port) as ssh:
+            with make_client(
+                ssh_host, ssh_user, ssh_password, ssh_port,
+                jump_hosts=ssh_jump_hosts,
+            ) as ssh:
                 def _ssh_run(cmd, t):
                     return ssh.run(cmd, timeout=t)
 
@@ -213,6 +217,7 @@ def main():
     parser.add_argument("--ssh-user",     default="root")
     parser.add_argument("--ssh-password", default="")
     parser.add_argument("--ssh-port",     type=int, default=22)
+    parser.add_argument("--ssh-jumps-b64", default="")
     # ADB 引数（指定時は端末から ping を実行）
     parser.add_argument("--adb-serial",   default=None,
                         help="ADB デバイスシリアル番号 (指定時=端末から ping 実行)")
@@ -234,6 +239,7 @@ def main():
         ssh_password=args.ssh_password, ssh_port=args.ssh_port,
         adb_serial=args.adb_serial,
         adb_path=args.adb_path,
+        ssh_jump_hosts=decode_jump_hosts(args.ssh_jumps_b64),
     )
     sys.exit(0 if success else 1)
 

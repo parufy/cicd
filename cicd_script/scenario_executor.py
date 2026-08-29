@@ -451,20 +451,15 @@ class ActionExecutor:
             "--ssh-password", self.host.password,
             "--ssh-port",     str(self.host.port),
         ]
-        # デバッグモード時は子スクリプトにも --debug を伝播
-        if logging.getLogger().level <= logging.DEBUG:
-            args.append("--debug")
-        return args
-
-    def _tcpdump_ssh_args(self) -> list[str]:
-        """tcpdump用SSH引数。最終ホストに加え、踏み台の接続情報も渡す。"""
-        args = self._ssh_args()
-        if self.host and self.host.jumps:
+        if self.host.jumps:
             jumps_json = json.dumps(
                 self.host.jumps, ensure_ascii=False, separators=(",", ":")
             )
             encoded = base64.urlsafe_b64encode(jumps_json.encode("utf-8")).decode("ascii")
             args += ["--ssh-jumps-b64", encoded]
+        # デバッグモード時は子スクリプトにも --debug を伝播
+        if logging.getLogger().level <= logging.DEBUG:
+            args.append("--debug")
         return args
 
     # ── wait ────────────────────────────────────────────────────
@@ -718,7 +713,7 @@ class ActionExecutor:
             "--stop-timeout", str(p.get("stop_timeout", 10)),
             "--timeout", str(p.get("timeout", 60)),
             "--output", str(result_file),
-            *self._tcpdump_ssh_args(),
+            *self._ssh_args(),
         ]
         if not p.get("sudo", True):
             cmd.append("--no-sudo")

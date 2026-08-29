@@ -14,13 +14,15 @@ hosts:
   #   password: "${ATT_PC_PASSWORD}"
   #   port: 22
 
-  # tcpdump取得PCへ2段の踏み台を経由して接続する例です。
+  # 任意の対象ホストへ2段の踏み台を経由して接続する例です。
+  # jumpsを省略（または [] を指定）すると従来どおり直接SSH接続します。
   # jumpsは手前から順に並べます。踏み台1台ならSSHは計2段、
   # 踏み台2台なら計3段になります。
-  # - name: tcpdump_pc
+  # ping / iperf / ADB / VATT / tcpdumpで共通して使用されます。
+  # - name: target_server
   #   address: 192.0.2.30
-  #   user: capture-user
-  #   password: "${TCPDUMP_PC_PASSWORD}"
+  #   user: target-user
+  #   password: "${TARGET_SERVER_PASSWORD}"
   #   port: 22
   #   jumps:
   #     - address: 192.0.2.10

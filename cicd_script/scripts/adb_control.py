@@ -24,7 +24,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ssh_client import make_client
+from ssh_client import decode_jump_hosts, make_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +50,7 @@ class AdbRunner:
         ssh_password: str,
         ssh_port: int,
         adb_path: str,
+        ssh_jump_hosts: list[dict] | None = None,
     ):
         self.serial      = serial
         self.ssh_host    = ssh_host
@@ -57,6 +58,7 @@ class AdbRunner:
         self.ssh_password = ssh_password
         self.ssh_port    = ssh_port
         self.adb_path    = adb_path
+        self.ssh_jump_hosts = ssh_jump_hosts or []
         self._ssh        = None   # SSHClient（接続後にセット）
 
     def _build_cmd(self, *adb_args: str) -> str:
@@ -86,7 +88,8 @@ class AdbRunner:
     def __enter__(self):
         if self.ssh_host:
             self._ssh = make_client(
-                self.ssh_host, self.ssh_user, self.ssh_password, self.ssh_port
+                self.ssh_host, self.ssh_user, self.ssh_password, self.ssh_port,
+                jump_hosts=self.ssh_jump_hosts,
             )
             self._ssh.connect()
         return self
@@ -159,6 +162,7 @@ def run_adb_control(
     ssh_user: str,
     ssh_password: str,
     ssh_port: int,
+    ssh_jump_hosts: list[dict] | None = None,
 ) -> bool:
     exec_on = ssh_host if ssh_host else "local"
     logger.info(
@@ -178,7 +182,10 @@ def run_adb_control(
     }
 
     try:
-        with AdbRunner(serial, ssh_host, ssh_user, ssh_password, ssh_port, adb_path) as runner:
+        with AdbRunner(
+            serial, ssh_host, ssh_user, ssh_password, ssh_port, adb_path,
+            ssh_jump_hosts=ssh_jump_hosts,
+        ) as runner:
 
             # ── 1. 端末接続確認 ───────────────────────────────────
             ok, dev = _check_device(runner, serial)
@@ -281,6 +288,7 @@ def main():
     parser.add_argument("--ssh-user",     default="root")
     parser.add_argument("--ssh-password", default="")
     parser.add_argument("--ssh-port",     type=int, default=22)
+    parser.add_argument("--ssh-jumps-b64", default="")
     parser.add_argument("--debug",        action="store_true",
                         help="デバッグモード: SSH応答をリアルタイム表示")
     args = parser.parse_args()
@@ -299,6 +307,7 @@ def main():
         ssh_user=args.ssh_user,
         ssh_password=args.ssh_password,
         ssh_port=args.ssh_port,
+        ssh_jump_hosts=decode_jump_hosts(args.ssh_jumps_b64),
     )
     sys.exit(0 if success else 1)
 

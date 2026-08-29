@@ -5,6 +5,8 @@ ssh_client.py
 ping_test.py / iperf_test.py / logcollect.py から import して使用する
 """
 
+import base64
+import json
 import logging
 import os
 import stat
@@ -14,6 +16,30 @@ from typing import Any
 import paramiko
 
 logger = logging.getLogger("ssh_client")
+
+
+def decode_jump_hosts(encoded: str | None) -> list[dict[str, Any]]:
+    """Decode and validate the URL-safe Base64 SSH jump-host payload."""
+    if not encoded:
+        return []
+    try:
+        value = json.loads(base64.urlsafe_b64decode(encoded.encode("ascii")))
+    except Exception as exc:
+        raise ValueError("SSH踏み台情報をデコードできません") from exc
+    if not isinstance(value, list):
+        raise ValueError("SSH踏み台情報はリストで指定してください")
+
+    jumps: list[dict[str, Any]] = []
+    for index, host in enumerate(value, 1):
+        if not isinstance(host, dict) or not host.get("host"):
+            raise ValueError(f"SSH踏み台{index}のhostが未指定です")
+        jumps.append({
+            "host": str(host["host"]),
+            "user": str(host.get("user", "root")),
+            "password": str(host.get("password", "")),
+            "port": int(host.get("port", 22)),
+        })
+    return jumps
 
 
 class SSHClient:

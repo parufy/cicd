@@ -35,7 +35,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from ssh_client import make_client
+from ssh_client import decode_jump_hosts, make_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -252,6 +252,7 @@ def run_iperf(
     server_ssh_password: str,
     server_ssh_port: int,
     server_startup_wait: int,          # サーバ起動後の待機秒数
+    ssh_jump_hosts: list[dict] | None = None,
 ) -> bool:
     run_timeout      = duration + 60
     use_ssh          = bool(ssh_host)
@@ -342,23 +343,37 @@ def run_iperf(
 
         if shared_ssh:
             # クライアント・サーバ制御PCが同一 → SSH接続を1本共用
-            with make_client(ssh_host, ssh_user, ssh_password, ssh_port) as ssh:
+            with make_client(
+                ssh_host, ssh_user, ssh_password, ssh_port,
+                jump_hosts=ssh_jump_hosts,
+            ) as ssh:
                 _execute(_make_run_fn(ssh), _make_run_fn(ssh))
 
         elif use_ssh and use_srv_ssh:
             # クライアント・サーバ制御PCが別々 → SSH接続を2本確立
-            with make_client(ssh_host, ssh_user, ssh_password, ssh_port) as cli_ssh, \
-                 make_client(srv_ssh_host, server_ssh_user, server_ssh_password, server_ssh_port) as srv_ssh:
+            with make_client(
+                ssh_host, ssh_user, ssh_password, ssh_port,
+                jump_hosts=ssh_jump_hosts,
+            ) as cli_ssh, make_client(
+                srv_ssh_host, server_ssh_user, server_ssh_password, server_ssh_port,
+                jump_hosts=ssh_jump_hosts,
+            ) as srv_ssh:
                 _execute(_make_run_fn(cli_ssh), _make_run_fn(srv_ssh))
 
         elif use_ssh:
             # クライアント側のみSSH
-            with make_client(ssh_host, ssh_user, ssh_password, ssh_port) as ssh:
+            with make_client(
+                ssh_host, ssh_user, ssh_password, ssh_port,
+                jump_hosts=ssh_jump_hosts,
+            ) as ssh:
                 _execute(_make_run_fn(ssh))
 
         elif use_srv_ssh:
             # サーバ側のみSSH（クライアントはローカル）
-            with make_client(srv_ssh_host, server_ssh_user, server_ssh_password, server_ssh_port) as srv_ssh:
+            with make_client(
+                srv_ssh_host, server_ssh_user, server_ssh_password, server_ssh_port,
+                jump_hosts=ssh_jump_hosts,
+            ) as srv_ssh:
                 _execute(_make_run_fn(), _make_run_fn(srv_ssh))
 
         else:
@@ -426,6 +441,7 @@ def main():
     parser.add_argument("--ssh-user",              default="root")
     parser.add_argument("--ssh-password",          default="")
     parser.add_argument("--ssh-port",              type=int, default=22)
+    parser.add_argument("--ssh-jumps-b64",         default="")
 
     # クライアント側 ADB 引数
     parser.add_argument("--adb-serial",            default=None,
@@ -473,6 +489,7 @@ def main():
         server_ssh_password=args.server_ssh_password,
         server_ssh_port=args.server_ssh_port,
         server_startup_wait=args.server_startup_wait,
+        ssh_jump_hosts=decode_jump_hosts(args.ssh_jumps_b64),
     )
     sys.exit(0 if success else 1)
 
